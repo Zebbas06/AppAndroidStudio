@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Solo la carpeta privada donde se guardan los adjuntos descargados. -->
+    <cache-path name="adjuntos" path="adjuntos/" />
+</paths>

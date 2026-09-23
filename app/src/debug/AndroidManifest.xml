@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- La excepcion de trafico en claro vive solo aqui: release no la hereda. -->
+    <application android:networkSecurityConfig="@xml/configuracion_red" />
+</manifest>

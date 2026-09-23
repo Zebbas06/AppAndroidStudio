@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Solo para el tema XML de arranque. Los colores reales viven en Color.kt -->
+    <color name="crema">#FFF7F3EA</color>
+    <color name="blanco">#FFFFFFFF</color>
+</resources>
