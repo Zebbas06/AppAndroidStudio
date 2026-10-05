@@ -1,7 +1,7 @@
 package com.residenciaguadalupe.news.data.red
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import com.residenciaguadalupe.news.data.sesion.AlmacenSesion
+import com.residenciaguadalupe.news.core.session.GestorSesion
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 class ClienteApi(
     urlBase: String,
-    private val sesion: AlmacenSesion,
+    private val sesion: GestorSesion,
     interceptoresExtra: List<Interceptor> = emptyList()
 ) {
     val base: HttpUrl = urlBase.toHttpUrl()
@@ -55,16 +55,21 @@ class ClienteApi(
      */
     private fun interceptorToken() = Interceptor { cadena ->
         val peticion = cadena.request()
-        val token = sesion.sesion.value?.token
-        val nuestro = peticion.url.host == base.host
+        val nuestro = peticion.url.scheme == base.scheme && peticion.url.host == base.host && peticion.url.port == base.port
+        val logout = peticion.url.encodedPath.endsWith("/auth/logout")
+        val explicito = if (logout) peticion.header("Authorization")?.removePrefix("Bearer ") else null
+        val actual = sesion.estado.value.sesion
+        if (explicito == null && actual?.vencida() == true) {
+            sesion.invalidar(actual.token, "Su sesión terminó. Vuelva a entrar.")
+        }
+        val token = explicito ?: sesion.estado.value.sesion?.token
         val conToken = if (token != null && nuestro)
             peticion.newBuilder().header("Authorization", "Bearer $token").build()
         else peticion
 
         val respuesta = cadena.proceed(conToken)
         if (respuesta.code == 401 && token != null && nuestro && !peticion.url.encodedPath.endsWith("/auth/login")) {
-            // Solo si el token rechazado sigue siendo el actual (evita carreras con un login nuevo).
-            if (sesion.sesion.value?.token == token) sesion.borrar("Su sesión terminó. Vuelva a entrar.")
+            sesion.invalidar(token, "Su sesión terminó. Vuelva a entrar.")
         }
         respuesta
     }

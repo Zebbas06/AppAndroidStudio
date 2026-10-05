@@ -27,7 +27,7 @@ interface ApiServicio {
 
     /** 204 sin cuerpo. */
     @POST("auth/logout")
-    suspend fun salir(): Response<Unit>
+    suspend fun salir(@Header("Authorization") autorizacion: String? = null): Response<Unit>
 
     // --- Perfil propio -------------------------------------------------------
 
@@ -104,7 +104,7 @@ interface ApiServicio {
     // --- Archivos ------------------------------------------------------------
 
     /**
-     * Multipart armado en Repositorio.subir: OkHttp genera el Content-Type
+     * Multipart armado en RepositorioMediosApi.subir: OkHttp genera el Content-Type
      * con su boundary. Va como @Body para poder marcarlo de un solo envio.
      */
     @POST("media")

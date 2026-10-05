@@ -1,7 +1,8 @@
 package com.residenciaguadalupe.news.data
 
 import com.residenciaguadalupe.news.data.red.*
-import com.residenciaguadalupe.news.data.sesion.Sesion
+import com.residenciaguadalupe.news.core.session.Sesion
+import com.residenciaguadalupe.news.core.session.GestorSesion
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -22,6 +23,7 @@ class ClienteApiTest {
     private lateinit var servidor: MockWebServer
     private lateinit var sesion: SesionEnMemoria
     private lateinit var cliente: ClienteApi
+    private lateinit var gestor: GestorSesion
 
     private val usuario = UserDto("6", "Residente QA", "r@example.invalid", "resident", "active", "password")
 
@@ -29,7 +31,8 @@ class ClienteApiTest {
     fun preparar() {
         servidor = MockWebServer().apply { start() }
         sesion = SesionEnMemoria(Sesion("tok-123", Instant.now().plusSeconds(3600), usuario))
-        cliente = ClienteApi(servidor.url("/api/v1/").toString(), sesion)
+        gestor = GestorSesion(sesion)
+        cliente = ClienteApi(servidor.url("/api/v1/").toString(), gestor)
     }
 
     @After
@@ -54,8 +57,8 @@ class ClienteApiTest {
         servidor.enqueue(json(401, """{"error":{"code":"UNAUTHENTICATED","message":"Token Bearer requerido.","requestId":"x","details":null}}"""))
         val e = runCatching { llamar { cliente.api.yo() } }.exceptionOrNull() as ErrorApi
         assertTrue(e.sesionTerminada)
-        assertNull(sesion.sesion.value)
-        assertEquals("Su sesión terminó. Vuelva a entrar.", sesion.motivo)
+        assertNull(gestor.estado.value.sesion)
+        assertEquals("Su sesión terminó. Vuelva a entrar.", gestor.estado.value.motivo)
     }
 
     @Test
@@ -64,7 +67,64 @@ class ClienteApiTest {
         val e = runCatching { llamar { cliente.api.entrar(LoginRequest("a@b.c", "password", "x")) } }
             .exceptionOrNull() as ErrorApi
         assertEquals("Correo o contraseña incorrectos.", e.mensaje)
-        assertNotNull(sesion.sesion.value)
+        assertNotNull(gestor.estado.value.sesion)
+    }
+
+    @Test
+    fun `un 401 activa la limpieza de datos privados`() = runTest {
+        var limpiado = false
+        gestor = GestorSesion(sesion) { limpiado = true }
+        cliente = ClienteApi(servidor.url("/api/v1/").toString(), gestor)
+        servidor.enqueue(json(401, """{"error":{"code":"UNAUTHENTICATED","message":"Sesion vencida."}}"""))
+        val error = runCatching { llamar { cliente.api.yo() } }.exceptionOrNull() as ErrorApi
+        assertTrue(error.sesionTerminada)
+        assertTrue(limpiado)
+        assertNull(sesion.leer())
+        assertNull(gestor.estado.value.sesion)
+    }
+
+    @Test
+    fun `un 401 de una sesion anterior no cierra la nueva`() = runTest {
+        val nueva = Sesion("tok-nuevo", Instant.now().plusSeconds(3600), usuario.copy(id = "8"))
+        cliente = ClienteApi(servidor.url("/api/v1/").toString(), gestor, listOf(okhttp3.Interceptor { cadena ->
+            val respuesta = cadena.proceed(cadena.request())
+            // Simula un login nuevo mientras sigue en vuelo la peticion anterior.
+            gestor.iniciar(nueva)
+            respuesta
+        }))
+        servidor.enqueue(json(401, """{"error":{"code":"UNAUTHENTICATED","message":"Sesion anterior vencida."}}"""))
+
+        val error = runCatching { llamar { cliente.api.yo() } }.exceptionOrNull() as ErrorApi
+
+        assertTrue(error.sesionTerminada)
+        assertEquals("Bearer tok-123", servidor.takeRequest().getHeader("Authorization"))
+        assertEquals(nueva, gestor.estado.value.sesion)
+        assertNull(gestor.estado.value.motivo)
+    }
+
+    @Test
+    fun `un adjunto de otro host no recibe el token`() = runTest {
+        cliente = ClienteApi("https://api.example.invalid/api/v1/", gestor)
+        servidor.enqueue(MockResponse().setResponseCode(200).setBody("PDF"))
+
+        llamar { cliente.api.descargar(servidor.url("/documento.pdf").toString()) }.use {
+            assertEquals("PDF", it.string())
+        }
+
+        assertNull(servidor.takeRequest().getHeader("Authorization"))
+        assertNotNull(gestor.estado.value.sesion)
+    }
+
+    @Test
+    fun `una respuesta exitosa incompatible produce un error comprensible`() = runTest {
+        servidor.enqueue(json(200, """{"data":{"fullName":"Usuario incompleto"}}"""))
+
+        val error = runCatching { llamar { cliente.api.yo() } }.exceptionOrNull() as ErrorApi
+
+        assertEquals("BAD_RESPONSE", error.codigo)
+        assertEquals(-1, error.estado)
+        assertEquals("La respuesta del servidor no se pudo leer. Inténtelo de nuevo.", error.mensaje)
+        assertNotNull(gestor.estado.value.sesion)
     }
 
     @Test
@@ -150,7 +210,7 @@ class ClienteApiTest {
 
     @Test
     fun `contentUrl se resuelve contra el origen sin duplicar api v1`() {
-        val c = ClienteApi("https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/", sesion)
+        val c = ClienteApi("https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/", gestor)
         assertEquals("https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/media/3/content",
             c.urlAdjunto("/api/v1/media/3/content"))
     }

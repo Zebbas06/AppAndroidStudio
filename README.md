@@ -35,17 +35,41 @@ Beanstalk Node.js 22 → RDS MySQL). Ya no usa datos de ejemplo.
 
 ## 1. Estado actual
 
+La remodelacion comienza con una base de verificacion: consulte
+[Fase 1: pruebas y recorridos por rol](docs/remodelacion/FASE_1_BASE_DE_VERIFICACION.md).
+`./gradlew :app:verificarBase` compila debug y ejecuta las pruebas locales.
+Las pruebas contra AWS requieren habilitacion explicita y se ejecutan aparte.
+
+La primera extraccion de codigo ya separa sesion y autenticacion. Consulte
+[Sesion y autenticacion separadas](docs/remodelacion/FASE_2_SESION_Y_AUTENTICACION.md)
+para responsabilidades, flujo de cierre y limites de verificacion.
+La siguiente extraccion separa muro y detalle por funcionalidad:
+[Publicaciones, muro y detalle](docs/remodelacion/FASE_3_PUBLICACIONES.md).
+Agenda y archivo tambien tienen su propio estado y ViewModel:
+[Agenda y archivo separados](docs/remodelacion/FASE_4_AGENDA_Y_ARCHIVO.md).
+El buzon y su insignia tambien tienen propietario independiente:
+[Notificaciones y contador](docs/remodelacion/FASE_5_NOTIFICACIONES.md).
+Perfil y preferencias ya tienen su propio estado y guardado ordenado:
+[Perfil y preferencias separados](docs/remodelacion/FASE_6_PERFIL_Y_PREFERENCIAS.md).
+Usuarios y aprobacion ahora tienen repositorio y formulario aislados:
+[Usuarios y aprobacion](docs/remodelacion/FASE_7_USUARIOS_Y_APROBACION.md).
+Lista administrativa, editor y medios ya tienen responsabilidades independientes:
+[Editor y medios separados](docs/remodelacion/FASE_8_EDITOR_Y_MEDIOS.md).
+Acceso y arranque cierran la segmentacion estructural prevista:
+[Acceso y arranque separados](docs/remodelacion/FASE_9_ACCESO_Y_ARRANQUE.md).
+Faltan los recorridos integrales en dispositivo; esto no certifica produccion.
+
 | Área | Estado |
 |---|---|
-| Sesión (login contraseña/PIN, registro, restaurar, logout, 401) | Conectado y verificado en AWS |
+| Sesión (login contraseña/PIN, registro, restaurar, logout, 401) | Acceso y arranque separados; pruebas locales aprobadas |
 | Muro, filtros, paginación, banda «Hoy en la residencia» | Conectado y verificado |
 | Agenda (Hoy / Mañana / Esta semana) | Conectado y verificado |
 | Detalle, lectura, reacciones, adjuntos (imagen/PDF) | Conectado y verificado |
 | Notificaciones (buzón, contador, leer, leer todas, archivar leídas) | Conectado y verificado |
-| Perfil (datos, preferencias, nombre, credencial, tamaño de letra) | Conectado y verificado |
-| Administración de avisos (crear, editar, fijar, archivar, eliminar) | Conectado y verificado |
-| Usuarios (pendientes, aprobar, alta, editar, deshabilitar, reponer) | Conectado y verificado |
-| Pruebas unitarias | 21 pruebas, todas pasan |
+| Perfil (datos, preferencias, nombre, credencial, tamaño de letra) | Separado; guardado ordenado y pruebas locales aprobadas |
+| Administración de avisos (crear, editar, fijar, archivar, eliminar) | Lista y editor separados; pruebas locales aprobadas |
+| Usuarios (pendientes, aprobar, alta, editar, deshabilitar, reponer) | Separado; aprobacion confirmada y pruebas locales aprobadas |
+| Pruebas unitarias | 188 pruebas locales aprobadas; ver remodelacion para cobertura |
 | Prueba de integración contra AWS | 43/43 pasos correctos (23/09/2026) |
 
 ---
@@ -87,6 +111,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 | APK de depuración | `./gradlew :app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk` |
 | APK de release (sin firmar) | `./gradlew :app:assembleRelease` |
 | Pruebas unitarias | `./gradlew :app:testDebugUnitTest` |
+| Base de la remodelacion | `./gradlew :app:verificarBase` (APK debug + pruebas locales) |
 | Instalar en el emulador | `adb install -r app/build/outputs/apk/debug/app-debug.apk` |
 | Prueba de integración contra AWS | ver [sección 10.2](#102-prueba-de-integración-contra-la-api-real) |
 
@@ -144,10 +169,31 @@ ResidenciaGuadalupe/
         │   ├── java/com/residenciaguadalupe/news/
         │   │   ├── AplicacionResidencia.kt   ← crea cliente HTTP, repositorio y Coil (una vez)
         │   │   ├── MainActivity.kt           ← única Activity; aplica la escala de letra
-        │   │   ├── Navegacion.kt             ← rutas, barra inferior por rol, arranque
-        │   │   ├── AppViewModel.kt           ← sesión, acceso, muro, agenda, detalle, buzón, perfil, archivo
-        │   │   ├── AdminViewModel.kt         ← lista y formulario de publicaciones
-        │   │   ├── UsuariosViewModel.kt      ← gestión de usuarios (admin)
+        │   │   ├── app/                      ← Navegacion y ArranqueViewModel (sin formulario)
+        │   │   ├── media/data/              ← repositorio de medios, fuente Android y lectura limitada
+        │   │   ├── users/                   ← UsuariosScreen, UsuariosViewModel y data/RepositorioUsuarios
+        │   │   ├── core/session/            ← modelo, persistencia y GestorSesion
+        │   │   ├── auth/
+        │   │   │   ├── AccesoScreen.kt       ← formulario y credenciales solo en memoria de UI
+        │   │   │   ├── AccesoViewModel.kt    ← envio, errores, pendiente y confirmacion
+        │   │   │   ├── data/RepositorioAutenticacion.kt ← interfaz y adaptador API
+        │   │   │   └── domain/              ← ValidarAcceso y ValidarCredencial
+        │   │   ├── profile/
+        │   │   │   ├── data/RepositorioPerfil.kt ← perfil propio, preferencias y sesion actual
+        │   │   │   ├── PerfilViewModel.kt      ← estado y guardado ordenado
+        │   │   │   └── PerfilScreen.kt         ← datos, formularios y accesibilidad
+        │   │   ├── notifications/
+        │   │   │   ├── data/                 ← contrato y repositorio HTTP del buzon
+        │   │   │   ├── NotificacionesViewModel.kt ← lista, insignia, lecturas y archivado
+        │   │   │   └── AvisosScreen.kt        ← presentacion del buzon
+        │   │   ├── publications/
+        │   │   │   ├── data/                 ← contrato y repositorio HTTP de publicaciones
+        │   │   │   ├── feed/                 ← MuroScreen, MuroViewModel y EstadoMuro
+        │   │   │   ├── detail/               ← DetalleScreen, DetalleViewModel y EstadoDetalle
+        │   │   │   ├── agenda/               ← HoyScreen, AgendaViewModel y EstadoAgenda
+        │   │   │   ├── archive/              ← ArchivoScreen, ArchivoViewModel y EstadoArchivo
+        │   │   │   ├── administration/       ← lista, acciones y Deshacer
+        │   │   │   └── editor/               ← formulario, validacion, uploads y publicar
         │   │   ├── data/
         │   │   │   ├── Modelos.kt            ← modelos de UI y conversión desde DTOs
         │   │   │   ├── Fechas.kt             ← zona America/Mexico_City y textos de fecha
@@ -157,12 +203,10 @@ ResidenciaGuadalupe/
         │   │   │   │   ├── Dtos.kt           ← DTOs del contrato OpenAPI
         │   │   │   │   ├── Envolturas.kt     ← {data}, {data,meta}, {error}
         │   │   │   │   └── ErrorApi.kt       ← traducción de errores y llamar()/llamarSinCuerpo()
-        │   │   │   ├── repositorio/Repositorio.kt ← único punto de acceso a la API
-        │   │   │   └── sesion/AlmacenSesion.kt    ← token, vencimiento y usuario persistidos
+        │   │   │   └── repositorio/Pagina.kt     ← modelo de pagina compartido
         │   │   └── ui/
         │   │       ├── theme/ (Color.kt, Type.kt)   ← paleta y tipografía del mockup
-        │   │       ├── componentes/                  ← Comunes.kt, BarraInferior.kt, AvisoEmergente.kt
-        │   │       └── pantallas/                    ← 11 pantallas (ver §7)
+        │   │       └── componentes/                  ← Comunes.kt, BarraInferior.kt, AvisoEmergente.kt
         │   └── res/
         │       ├── drawable/ (logo.png, foto_capilla.jpg, foto_comedor.jpg, foto_jardineria.jpg)
         │       ├── values/ (strings, colors, themes, font_certs)
@@ -177,13 +221,17 @@ ResidenciaGuadalupe/
 ## 6. Arquitectura de la app
 
 ```
-Pantallas Compose (ui/pantallas)
-        │  leen estado observable (mutableStateOf) y llaman métodos
+Pantallas Compose (publications/*, notifications, profile, users y auth)
+        │  leen estado observable (StateFlow o mutableStateOf) y llaman métodos
         ▼
-ViewModels: AppViewModel · AdminViewModel · UsuariosViewModel   (AndroidViewModel, alcance Activity)
+MuroViewModel · AgendaViewModel · NotificacionesViewModel · PerfilViewModel · UsuariosViewModel (Activity)
+DetalleViewModel · ArchivoViewModel · AdminPublicacionesViewModel · EditorPublicacionViewModel · AccesoViewModel (entrada de navegacion)
+ArranqueViewModel (Activity; restauracion y sesion del grafo)
         │  capturan ErrorApi y lo convierten en estado de pantalla
         ▼
-Repositorio (data/repositorio)  ── DTO → modelo, validación de adjuntos, señal "cambios"
+RepositorioPublicaciones / RepositorioNotificaciones / RepositorioPerfil / RepositorioUsuarios
+RepositorioAutenticacion (acceso, restauracion y logout)
+RepositorioMedios (archivos del selector, subida y cache privada)
         │
         ▼
 ClienteApi: OkHttp (Bearer + cierre ante 401) → Retrofit + kotlinx.serialization → ApiServicio
@@ -193,23 +241,45 @@ API Gateway (HTTPS) → Elastic Beanstalk → RDS MySQL
 ```
 
 - **Contenedor manual.** `AplicacionResidencia` crea de forma perezosa
-  `AlmacenSesionPreferencias`, `ClienteApi`, `Repositorio` y el `ImageLoader`
-  de Coil. Los ViewModels los obtienen con `app as AplicacionResidencia`.
-- **Estado.** Cada ViewModel expone propiedades `mutableStateOf` /
-  `mutableStateListOf` con `private set`. Las pantallas no guardan datos de
-  red, solo estado visual (campos de formulario, diálogos).
+  `GestorSesion`, `AlmacenSesionPreferencias`, `ClienteApi`, los repositorios y el `ImageLoader`
+  de Coil. Los ViewModels de publicaciones y notificaciones reciben dependencias por constructor mediante las
+  fabricas de `Navegacion`; perfil recibe sus dependencias en `MainActivity`
+  para aplicar la escala a toda la interfaz. Los ViewModels anteriores aun usan `Application`.
+- **Ciclo de sesion.** `GestorSesion` cancela trabajos y ejecuta la limpieza
+  compartida. Los ViewModels y la navegacion observan su revision para
+  reiniciar sus estados entre cuentas.
+- **Estado.** Publicaciones, notificaciones y perfil exponen `StateFlow` de un estado inmutable con
+  listas de solo lectura. Los ViewModels anteriores mantienen el patron
+  Compose. Las pantallas guardan solo estado visual, no datos de red.
 - **Errores.** Toda llamada pasa por `llamar { }` o `llamarSinCuerpo { }`
   (`ErrorApi.kt`), que devuelven el cuerpo o lanzan `ErrorApi` con un mensaje
   que siempre se puede mostrar al usuario.
-- **Recarga del muro.** `Repositorio.cambios` (un `StateFlow` contador) sube en
-  cada creación, edición, fijado, archivado o borrado; `AppViewModel` marca el
-  muro como desactualizado y `MuroScreen` lo recarga al volver.
+- **Recarga del muro.** `RepositorioPublicaciones.cambios` sube tras cada
+  escritura administrativa exitosa. `MuroViewModel` recarga al regresar.
+  `actualizaciones` comunica lecturas y reacciones sin acoplar ViewModels.
+- **Detalle aislado.** Cada entrada de navegacion tiene su ViewModel;
+  cambiar de publicacion o salir cancela lectura, reaccion y descarga.
+  Las respuestas solo se aplican a la solicitud que sigue vigente.
+- **Agenda y archivo.** Conservan paginas al regresar de detalle. Al volver
+  o solicitar otra pagina detectan cambio de dia o revision administrativa
+  y recargan sin mezclar rangos. Un error de pagina conserva las filas y
+  permite reintentar la misma pagina.
+- **Buzon e insignia.** `NotificacionesViewModel` mantiene ambos y observa
+  lecturas de publicaciones. Las operaciones usan un Mutex para ordenar
+  snapshots y escrituras; solo se confirma una lectura aceptada por la API.
+  Archivar recarga pagina 1 porque cambian los offsets. Perder la sesion o
+  el permiso de residente limpia contenido y cancela tareas.
+- **Perfil.** Las preferencias se guardan por un unico worker: mantiene la
+  eleccion mas reciente mientras confirma snapshots en serie. Un fallo del
+  ultimo envio restaura el ultimo estado confirmado, no una copia obsoleta.
+  Nombre, credencial y preferencias actualizan la sesion actual; una cuenta
+  nueva nunca recibe respuestas de la anterior. La escala sigue siendo local.
 
 ---
 
 ## 7. Pantallas, navegación y roles
 
-### 7.1 Rutas (`Navegacion.kt`)
+### 7.1 Rutas (`app/Navegacion.kt`)
 
 | Ruta | Pantalla | Archivo | Quién la ve |
 |---|---|---|---|
@@ -221,13 +291,13 @@ API Gateway (HTTPS) → Elastic Beanstalk → RDS MySQL
 | `perfil` | Perfil, preferencias, cuenta | `PerfilScreen.kt` | Todos |
 | `archivo` | Publicaciones anteriores | `ArchivoScreen.kt` | Todos |
 | `admin_lista` | Administración de avisos | `AdminListaScreen.kt` | Admin y empleado |
-| `admin_crear` | Crear / editar aviso | `AdminCrearScreen.kt` | Admin y empleado |
+| `admin_crear?postId={postId}` | Crear / editar aviso (ID opcional) | `AdminCrearScreen.kt` | Admin y empleado |
 | `usuarios` | Lista de usuarios | `UsuariosScreen.kt` | Solo admin |
 | `usuario/{id}` | Alta / edición / aprobación (`id = nuevo` para alta) | `UsuariosScreen.kt` | Solo admin |
 
 ### 7.2 Flujo de arranque y sesión
 
-1. Mientras `AppViewModel.restaurando` es `true` se muestra «Abriendo el mural…».
+1. Mientras `ArranqueViewModel.estado.restaurando` es `true` se muestra «Abriendo el mural…».
 2. Si hay token guardado y no vencido → `GET auth/me` → entra al **muro**.
    Un 401 cierra la sesión (lo hace el interceptor); un 403 la cierra con el
    mensaje de la API; sin red entra con el usuario guardado.
@@ -353,26 +423,27 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
 
 ## 8. Detalles de implementación Android
 
-### 8.1 Sesión (`data/sesion/AlmacenSesion.kt`)
+### 8.1 Sesión (`core/session`)
 
 - Se guarda `token`, `vence_en` (ISO) y el `usuario` (JSON) en
   SharedPreferences privadas **`sesion_residencia.xml`**.
 - Ese archivo está **excluido del respaldo en la nube y de la transferencia
   entre dispositivos** (`res/xml/reglas_respaldo.xml`, `reglas_extraccion.xml`).
-- Expone un `StateFlow<Sesion?>`; `AppViewModel` lo observa para entrar y salir.
+- `GestorSesion` expone `StateFlow<EstadoSesion>` con sesion, revision y motivo.
+  Los ViewModels lo observan; la persistencia no coordina la interfaz.
 - No hay refresh token: al vencer (8 h) el usuario vuelve a entrar.
-- Al cerrar sesión: `POST auth/logout` (si hay red) y **siempre** se borra la
-  sesión local, los PDF descargados (`cache/adjuntos/`) y la caché en memoria
-  de imágenes.
+- Al cerrar sesion se cancelan trabajos y se borran sesion local, PDFs e
+  imagenes en memoria. Luego se intenta `POST auth/logout` en segundo plano
+  con el token anterior. El cierre local no espera a internet.
 
 ### 8.2 Cliente HTTP (`data/red/ClienteApi.kt`)
 
 - Timeouts: conexión 20 s, lectura 30 s, escritura 60 s (subidas lentas).
 - **Interceptor de token**:
-  - Añade `Authorization: Bearer <token>` solo a peticiones hacia el host de
-    la API.
+  - Añade `Authorization: Bearer <token>` solo a peticiones con el mismo
+    esquema, host y puerto de la API.
   - Ante un **401** en una petición que llevaba token (salvo `auth/login`),
-    borra la sesión con el motivo «Su sesión terminó».
+    informa al gestor para cerrar y limpiar con el motivo «Su sesión terminó».
   - Antes de borrarla comprueba que el token rechazado siga siendo el actual,
     para no cerrar un login nuevo.
 - **Json** (`ClienteApi.json`):
@@ -387,6 +458,8 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
   **origen**, sin duplicar `/api/v1/`.
 - **Coil** usa el mismo OkHttp (las imágenes llevan el Bearer), **sin caché en
   disco** (`private, no-store`); la memoria se vacía al cerrar sesión.
+  `InterceptorImagenSesion` separa claves por revision y descarta respuestas
+  que terminan despues de un cambio de sesion.
 
 ### 8.3 Errores (`data/red/ErrorApi.kt`)
 
@@ -449,12 +522,12 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
 - Textos: «10:30 a. m.», «Hoy a las 8:00 a. m.», «Miércoles 16», «Hace 15 min»,
   «Septiembre de 2026».
 
-### 8.6 Publicaciones: idempotencia y versiones (`AdminViewModel.kt`)
+### 8.6 Publicaciones: idempotencia y versiones (`publications/editor/EditorPublicacionViewModel.kt`)
 
 - **POST** lleva `type` y la cabecera `Idempotency-Key` (UUID). Se reutiliza la
   misma clave mientras el cuerpo no cambie (reintento seguro); si el cuerpo
   cambia, se genera otra.
-- **PUT** va **sin `type`** (`Repositorio.editar` lo quita) y con
+- **PUT** va **sin `type`** (`RepositorioPublicacionesApi.editar` lo quita) y con
   `If-Match: "<version>"`. Un 409 `VERSION_CONFLICT` ofrece cargar la versión
   actual.
 - Campos ajenos al tipo no se envían: un aviso no lleva `menuDate` y un menú no
@@ -465,18 +538,20 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
 - `expiresAt` = inicio del día siguiente al elegido en «Mostrar en el muro
   hasta».
 
-### 8.7 Adjuntos (`Repositorio.subir` / `descargar`)
+### 8.7 Adjuntos (`media/data/RepositorioMediosApi.kt`)
 
 1. Se elige con el selector del sistema (`OpenDocument`: `image/jpeg`,
    `image/png`, `application/pdf`).
 2. Se valida **antes de enviar**: tipo, y tamaño ≤ **5,000,000 bytes**
-   (JPEG/PNG) o ≤ **9,000,000 bytes** (PDF).
+   (JPEG/PNG) o ≤ **9,000,000 bytes** (PDF). La lectura se detiene al exceder
+   el limite aunque el proveedor omita o falsee el tamaño.
 3. `POST media` multipart (`file` + `altText` opcional con el título). El cuerpo
    es de **un solo envío** (`isOneShot`). OkHttp reintenta por su cuenta un 408,
    y con un archivo de varios MB eso repetiría toda la subida.
-4. El `id` devuelto va en `attachmentIds` (máximo 1). Quitar un upload nuevo lo
-   borra (`DELETE media/{id}`); quitar uno ya asociado solo lo omite y la API
-   lo desasocia.
+4. El `id` devuelto va en `attachmentIds` (máximo 1). Quitar un upload nuevo
+   que nunca se envio al publicar intenta borrarlo (`DELETE media/{id}`). Si ya
+   participo en un envio sin confirmar, no se borra: puede estar asociado en el
+   servidor. Quitar uno existente lo omite y la API lo desasocia al guardar.
 5. Descarga: siempre con Bearer. Los PDF se guardan en `cache/adjuntos/` y se
    abren con `FileProvider` (`${applicationId}.archivos`); se borran al cerrar
    sesión.
@@ -722,7 +797,8 @@ de auditoría.
 
 ### 10.1 Pruebas unitarias (JVM, sin red)
 
-`./gradlew :app:testDebugUnitTest` — 21 pruebas en `app/src/test/…/data/`.
+`./gradlew :app:testDebugUnitTest` — 188 pruebas locales en `app/src/test/`.
+La integracion remota queda excluida salvo habilitacion explicita.
 
 **`ClienteApiTest.kt`** (MockWebServer, con cuerpos copiados de la evidencia AWS):
 - Manda el Bearer y usa rutas relativas; no envía parámetros `null`.
@@ -746,17 +822,45 @@ de auditoría.
 - Formato de hora del mockup, extractos, `unreadCount`, perfil y teléfono
   legible.
 
+`publications/` agrega 20 pruebas: contrato HTTP del repositorio, filtros,
+paginacion, errores de actividades, eventos de lectura/reaccion, limpieza de
+cuenta y respuestas tardias de detalle, reacciones y PDFs.
+`AgendaViewModelTest` y `ArchivoViewModelTest` agregan otras 16 pruebas:
+rangos compartidos con la banda del muro, cambios rapidos de pestaña,
+paginacion, reintentos, agrupacion mensual, cambio de dia e invalidacion.
+`notifications/` agrega 18 pruebas: 14 de buzon, insignia, concurrencia,
+lecturas, archivado y permisos; 4 del contrato HTTP.
+`profile/` agrega 12 pruebas de ViewModel y 5 de contrato y persistencia;
+`auth/domain/ValidarCredencialTest` agrega 3 de reglas compartidas.
+`users/UsuariosViewModelTest` agrega 9 de aprobacion, permisos, credenciales,
+paginacion y respuestas tardias.
+La fase 8 agrega 40 pruebas: 14 de editor, 8 de lista administrativa,
+5 de reglas del formulario y 13 de medios, contrato HTTP y lectura limitada.
+La fase 9 agrega 27 pruebas: 11 de acceso, 10 de arranque, 4 de validacion
+publica y 2 adicionales del contrato HTTP de autenticacion.
+
 `SesionEnMemoria.kt` es un `AlmacenSesion` falso para probar sin Android.
+
+`core/session/GestorSesionTest.kt` y `auth/data/RepositorioAutenticacionTest.kt`
+comprueban las transiciones, cancelacion, limpieza y revocacion capturada.
+
+**`SesionTest.kt`** comprueba que una sesion sigue vigente antes de su
+vencimiento y deja de ser valida exactamente en ese instante.
+
+La fase 1 agrega pruebas de respuesta incompatible, adjuntos de otro host y
+401 de una sesion anterior sin cerrar un login nuevo. Consulte los recorridos
+y limites de cobertura en [la base de verificacion](docs/remodelacion/FASE_1_BASE_DE_VERIFICACION.md).
 
 ### 10.2 Prueba de integración contra la API real
 
 `IntegracionApiTest.kt` recorre la API desplegada **con el mismo cliente de la
-app**. Solo corre si existen las variables de entorno; si no, se omite (así no
-falla en CI ni sin credenciales):
+app**. Se excluye de las pruebas ordinarias. Para habilitarla expresamente
+se requiere `-PintegracionApi=true` y las variables de entorno; la tarea falla
+si se habilita sin credenciales:
 
 ```bash
 RG_API_CORREO='<correo admin de pruebas>' RG_API_SECRETO='<contraseña>' \
-  ./gradlew :app:testDebugUnitTest --tests '*IntegracionApiTest' --rerun
+  ./gradlew :app:testDebugUnitTest -PintegracionApi=true --tests '*IntegracionApiTest' --rerun-tasks
 # Opcional: RG_API_URL para otra base (por defecto el Gateway de pruebas)
 ```
 

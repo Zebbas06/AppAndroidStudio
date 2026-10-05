@@ -101,3 +101,27 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
+
+// La integracion escribe en AWS: debe habilitarse expresamente.
+val integracionApi = providers.gradleProperty("integracionApi").map { it == "true" }.orElse(false)
+tasks.withType<Test>().configureEach {
+    if (!integracionApi.get()) {
+        exclude("**/IntegracionApiTest*")
+    } else {
+        doFirst {
+            check(!System.getenv("RG_API_CORREO").isNullOrBlank() &&
+                !System.getenv("RG_API_SECRETO").isNullOrBlank()) {
+                "La integracion requiere RG_API_CORREO y RG_API_SECRETO de una cuenta de pruebas."
+            }
+        }
+    }
+}
+
+tasks.register("verificarBase") {
+    check(!integracionApi.get()) {
+        "verificarBase es local. Ejecute la integracion por separado."
+    }
+    group = "verification"
+    description = "Compila debug y verifica las pruebas locales de referencia, sin llamadas a AWS."
+    dependsOn("assembleDebug", "testDebugUnitTest")
+}

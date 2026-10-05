@@ -1,8 +1,9 @@
 package com.residenciaguadalupe.news.data
 
 import com.residenciaguadalupe.news.data.red.*
-import com.residenciaguadalupe.news.data.repositorio.Repositorio
-import com.residenciaguadalupe.news.data.sesion.Sesion
+import com.residenciaguadalupe.news.media.data.RepositorioMediosApi
+import com.residenciaguadalupe.news.core.session.Sesion
+import com.residenciaguadalupe.news.core.session.GestorSesion
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
@@ -15,8 +16,9 @@ import java.util.UUID
 
 /**
  * Recorrido contra la API desplegada con el mismo cliente de la app.
- * Solo corre si existen RG_API_CORREO y RG_API_SECRETO (cuenta admin de
- * pruebas); nunca guarda la credencial. Crea datos con prefijo QA- y los
+ * Gradle la excluye salvo -PintegracionApi=true y exige RG_API_CORREO y
+ * RG_API_SECRETO (cuenta admin de pruebas); nunca guarda la credencial.
+ * Crea datos con prefijo QA- y los
  * limpia al final: borra publicaciones y deshabilita las cuentas creadas.
  * Resultado paso a paso en app/build/integracion-api.txt.
  */
@@ -26,14 +28,14 @@ class IntegracionApiTest {
     private val bitacora = StringBuilder()
     private val fallas = mutableListOf<String>()
 
-    private fun cliente(): Pair<ClienteApi, SesionEnMemoria> {
-        val s = SesionEnMemoria()
+    private fun cliente(): Pair<ClienteApi, GestorSesion> {
+        val s = GestorSesion(SesionEnMemoria())
         return ClienteApi(url, s) to s
     }
 
-    private suspend fun ClienteApi.entrar(sesion: SesionEnMemoria, correo: String, metodo: String, secreto: String): UserDto {
+    private suspend fun ClienteApi.entrar(sesion: GestorSesion, correo: String, metodo: String, secreto: String): UserDto {
         val r = llamar { api.entrar(LoginRequest(correo, metodo, secreto)) }.data
-        sesion.guardar(Sesion(r.accessToken, Instant.parse(r.expiresAt), r.user))
+        sesion.iniciar(Sesion(r.accessToken, Instant.parse(r.expiresAt), r.user))
         return r.user
     }
 
@@ -89,7 +91,7 @@ class IntegracionApiTest {
             paso("login admin") {
                 val u = admin.entrar(sAdmin, correo!!, "password", secreto!!)
                 check(u.rol == Rol.ADMIN, "rol ${u.role}")
-                "rol=${u.role}, vence=${sAdmin.sesion.value!!.venceEn}"
+                "rol=${u.role}, vence=${sAdmin.estado.value.sesion!!.venceEn}"
             }
             paso("GET auth/me") { llamar { api.yo() }.data.let { "${it.fullName}, staffProfile.area=${it.staffProfile?.area}" } }
             paso("preferencias GET/PUT") {
@@ -196,7 +198,7 @@ class IntegracionApiTest {
             }
             paso("PUT con type = 422") {
                 esperaError(422) {
-                    // Se arma a mano para forzar type (Repositorio.editar lo quita).
+                    // Se arma a mano para forzar type (RepositorioPublicacionesApi.editar lo quita).
                     llamar { api.editarPublicacion(avisoId, aviso, "\"$avisoVersion\"") }
                 }.codigo
             }
@@ -244,7 +246,7 @@ class IntegracionApiTest {
             // --- Adjuntos ------------------------------------------------------------
             val png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
             paso("subir PNG (multipart de un solo envío)") {
-                val m = llamar { api.subirArchivo(Repositorio.cuerpoSubida("$tag.png", "image/png", png, "Imagen QA")) }.data
+                val m = llamar { api.subirArchivo(RepositorioMediosApi.cuerpoSubida("$tag.png", "image/png", png, "Imagen QA")) }.data
                 mediaId = m.id
                 check(m.postId == null && m.sizeBytes == png.size.toLong(), "${m.postId} ${m.sizeBytes}")
                 "id=${m.id}, contentUrl=${m.contentUrl} -> ${admin.urlAdjunto(m.contentUrl)}"
@@ -262,7 +264,7 @@ class IntegracionApiTest {
             }
             paso("formato falso = 415") {
                 esperaError(415) {
-                    llamar { api.subirArchivo(Repositorio.cuerpoSubida("$tag.png", "image/png", "no soy png".toByteArray(), null)) }
+                    llamar { api.subirArchivo(RepositorioMediosApi.cuerpoSubida("$tag.png", "image/png", "no soy png".toByteArray(), null)) }
                 }.codigo
             }
             paso("asociar la imagen al evento (PUT attachmentIds)") {
@@ -413,10 +415,10 @@ class IntegracionApiTest {
             }
             paso("logout admin (204) y token revocado") {
                 llamarSinCuerpo { api.salir() }
-                val tokenViejo = sAdmin.sesion.value
+                val tokenViejo = sAdmin.estado.value.sesion
                 check(tokenViejo != null, "sesión ya borrada")
                 esperaError(401) { llamar { api.yo() } }
-                check(sAdmin.sesion.value == null, "401 no cerró la sesión local")
+                check(sAdmin.estado.value.sesion == null, "401 no cerró la sesión local")
                 "401 cierra la sesión local"
             }
             File("build/integracion-api.txt").writeText("Corrida $tag contra $url\n\n$bitacora")

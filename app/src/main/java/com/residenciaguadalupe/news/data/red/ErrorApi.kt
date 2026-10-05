@@ -3,6 +3,8 @@ package com.residenciaguadalupe.news.data.red
 import kotlinx.serialization.json.Json
 import retrofit2.Response
 import java.io.IOException
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 /**
  * Cualquier fallo de una llamada, ya traducido para la interfaz.
@@ -107,13 +109,23 @@ suspend fun llamarSinCuerpo(bloque: suspend () -> Response<Unit>) {
 }
 
 private suspend fun <T> ejecutar(bloque: suspend () -> Response<T>): Response<T> {
+    coroutineContext.ensureActive()
     val respuesta = try {
         bloque()
     } catch (e: IOException) {
+        coroutineContext.ensureActive()
         throw ErrorApi.sinRed(e)
     } catch (e: kotlinx.serialization.SerializationException) {
+        coroutineContext.ensureActive()
         // Un 2xx con cuerpo inesperado: no mostrar el detalle tecnico.
         throw ErrorApi(-1, "BAD_RESPONSE", "La respuesta del servidor no se pudo leer. Inténtelo de nuevo.")
+    }
+    try {
+        coroutineContext.ensureActive()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        (respuesta.body() as? okhttp3.ResponseBody)?.close()
+        respuesta.errorBody()?.close()
+        throw e
     }
     if (!respuesta.isSuccessful) throw ErrorApi.desde(respuesta)
     return respuesta

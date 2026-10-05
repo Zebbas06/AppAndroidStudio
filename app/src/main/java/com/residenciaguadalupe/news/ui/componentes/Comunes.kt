@@ -128,12 +128,13 @@ fun BotonSecundario(
 
 /** Boton de texto subrayado (enlaces tipo "¿Olvidó su contraseña?"). */
 @Composable
-fun BotonEnlace(texto: String, onClick: () -> Unit, color: Color = LadrilloText, modifier: Modifier = Modifier) {
+fun BotonEnlace(texto: String, onClick: () -> Unit, color: Color = LadrilloText, modifier: Modifier = Modifier, habilitado: Boolean = true) {
     Text(
         texto,
         style = cuerpo(16, negrita = true),
         color = color,
-        modifier = modifier.clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp)
+        modifier = modifier.alpha(if (habilitado) 1f else 0.5f)
+            .clickable(enabled = habilitado, onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp)
     )
 }
 
@@ -266,11 +267,12 @@ fun CampoFecha(
     onFecha: (LocalDate?) -> Unit,
     modifier: Modifier = Modifier,
     permitirBorrar: Boolean = false,
-    placeholder: String = "Elegir día"
+    placeholder: String = "Elegir día",
+    habilitado: Boolean = true
 ) {
     var abierto by remember { mutableStateOf(false) }
     CampoBoton(etiqueta, fecha?.let { Fechas.diaCorto(it) + " · " + it.format(Fechas.FORMATO_CORTO) },
-        { abierto = true }, modifier, placeholder)
+        { abierto = true }, modifier, placeholder, habilitado = habilitado)
     if (abierto) {
         // DatePicker trabaja en milisegundos UTC del inicio del dia.
         val estado = rememberDatePickerState(
@@ -299,10 +301,10 @@ fun CampoFecha(
 /** Campo de hora con el selector de Material. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CampoHora(etiqueta: String, hora: LocalTime?, onHora: (LocalTime) -> Unit, modifier: Modifier = Modifier) {
+fun CampoHora(etiqueta: String, hora: LocalTime?, onHora: (LocalTime) -> Unit, modifier: Modifier = Modifier, habilitado: Boolean = true) {
     var abierto by remember { mutableStateOf(false) }
     CampoBoton(etiqueta, hora?.let { Fechas.hora(Fechas.hoy().atTime(it).atZone(Fechas.ZONA)) },
-        { abierto = true }, modifier, "Elegir hora")
+        { abierto = true }, modifier, "Elegir hora", habilitado = habilitado)
     if (abierto) {
         val estado = rememberTimePickerState(hora?.hour ?: 10, hora?.minute ?: 0, is24Hour = false)
         AlertDialog(
@@ -402,7 +404,11 @@ fun BarraVolver(texto: String, onVolver: () -> Unit) {
 
 /** Interruptor Sí / No de dos pildoras pegadas. */
 @Composable
-fun InterruptorSiNo(valor: Boolean, onCambio: (Boolean) -> Unit) {
+fun InterruptorSiNo(valor: Boolean, onCambio: (Boolean) -> Unit) =
+    InterruptorSiNo(valor, onCambio, habilitado = true)
+
+@Composable
+fun InterruptorSiNo(valor: Boolean, onCambio: (Boolean) -> Unit, habilitado: Boolean) {
     Row(
         Modifier
             .clip(RoundedCornerShape(999.dp))
@@ -415,7 +421,7 @@ fun InterruptorSiNo(valor: Boolean, onCambio: (Boolean) -> Unit) {
                 Modifier
                     .defaultMinSize(minWidth = 52.dp, minHeight = 52.dp)
                     .background(if (activo) Verde else Color.Transparent)
-                    .clickable { onCambio(opcion) }
+                    .clickable(enabled = habilitado) { onCambio(opcion) }
                     .padding(horizontal = 20.dp),
                 contentAlignment = Alignment.Center
             ) {
