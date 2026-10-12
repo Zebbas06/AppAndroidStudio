@@ -108,7 +108,7 @@ fun MuroScreen(
 private fun BandaHoy(vm: MuroViewModel, onDetalle: (String) -> Unit, onAgenda: () -> Unit) {
     val estado by vm.estado.collectAsState()
     val items = estado.bandaHoy
-    Box(Modifier.padding(horizontal = 26.dp).padding(top = 20.dp)) {
+    Box(Modifier.padding(horizontal = 26.dp).padding(top = 20.dp, bottom = 20.dp)) {
         Column(
             Modifier
                 .clip(RoundedCornerShape(30.dp))
