@@ -78,7 +78,12 @@ fun HoyScreen(vm: AgendaViewModel, onAbrirDetalle: (String) -> Unit) {
                         Cuerpo("Para ese día todavía no se programa nada. En cuanto la administración lo publique aparecerá aquí y en el muro.",
                             alineacion = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
                         Spacer(Modifier.height(26.dp))
-                        BotonPrincipal("Ver las de hoy", { vm.cambiarPestana(PestanaAgenda.HOY) })
+                        // Desde Hoy se sugiere manana; desde las demas, regresar a hoy.
+                        if (estado.pestana == PestanaAgenda.HOY) {
+                            BotonPrincipal("Ver las de mañana", { vm.cambiarPestana(PestanaAgenda.MANANA) })
+                        } else {
+                            BotonPrincipal("Ver las de hoy", { vm.cambiarPestana(PestanaAgenda.HOY) })
+                        }
                     }
                 }
             } else {

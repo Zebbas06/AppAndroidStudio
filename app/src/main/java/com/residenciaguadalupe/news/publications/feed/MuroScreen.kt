@@ -92,7 +92,7 @@ fun MuroScreen(
                                 Spacer(Modifier.height(12.dp))
                             }
                             BotonSecundario("Ver publicaciones anteriores", onArchivo)
-                            Cuerpo("Fundación sin fines de lucro · Cuernavaca", 16, Gris,
+                            Cuerpo("Residencia Guadalupe · Cuernavaca", 16, Gris,
                                 alineacion = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth().padding(top = 22.dp))
                         }
