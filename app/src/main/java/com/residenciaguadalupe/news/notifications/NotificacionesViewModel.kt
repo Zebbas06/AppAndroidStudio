@@ -72,18 +72,29 @@ class NotificacionesViewModel(
         }
     }
 
-    fun cargarNotificaciones() = cargar(reiniciar = true)
-    fun cargarMasNotificaciones() = cargar(reiniciar = false)
+    fun cargarNotificaciones() { cargar(reiniciar = true) }
+    fun cargarMasNotificaciones() { cargar(reiniciar = false) }
 
-    private fun cargar(reiniciar: Boolean) {
-        if (!residente() || estado.value.accionando) return
+    /** Deslizar hacia abajo: regresa cuando termina la consulta. */
+    suspend fun recargar() {
+        cargar(reiniciar = true, silencioso = true)?.join()
+    }
+
+    /** La app volvio a primer plano: el listado ya trae el contador; si no se abrio, solo la insignia. */
+    fun alVolver() {
+        if (pagina > 0) cargar(reiniciar = true, silencioso = true) else actualizarNoLeidas()
+    }
+
+    /** [silencioso] avisa el error sin quitar las filas que ya se veian. */
+    private fun cargar(reiniciar: Boolean, silencioso: Boolean = false): Job? {
+        if (!residente() || estado.value.accionando) return null
         val actual = estado.value
-        if (!reiniciar && (actual.cargando || actual.cargandoMas || !actual.hayMas)) return
+        if (!reiniciar && (actual.cargando || actual.cargandoMas || !actual.hayMas)) return null
         val turno = ++solicitud
         trabajoLista?.cancel()
         val siguiente = if (reiniciar) 1 else pagina + 1
         mutableEstado.update { it.copy(cargando = reiniciar, cargandoMas = !reiniciar, error = null, errorMas = null) }
-        trabajoLista = gestor.lanzar(viewModelScope) {
+        val nuevo = gestor.lanzar(viewModelScope) {
             try {
                 operaciones.withLock {
                     val r = repo.notificaciones(siguiente)
@@ -97,11 +108,19 @@ class NotificacionesViewModel(
                     }
                 }
             } catch (e: ErrorApi) {
-                if (turno == solicitud) mutableEstado.update { if (reiniciar) it.copy(error = e) else it.copy(errorMas = e) }
+                if (turno == solicitud) mutableEstado.update {
+                    when {
+                        silencioso && it.notificaciones.isNotEmpty() -> it.copy(mensaje = e.mensaje)
+                        reiniciar -> it.copy(error = e)
+                        else -> it.copy(errorMas = e)
+                    }
+                }
             } finally {
                 if (turno == solicitud) mutableEstado.update { it.copy(cargando = false, cargandoMas = false) }
             }
         }
+        trabajoLista = nuevo
+        return nuevo
     }
 
     /** Navega inmediatamente; solo confirma la lectura local si el servidor la acepta. */

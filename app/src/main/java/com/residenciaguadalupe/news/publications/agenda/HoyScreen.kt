@@ -59,54 +59,56 @@ fun HoyScreen(vm: AgendaViewModel, onAbrirDetalle: (String) -> Unit) {
         }
         Linea()
 
-        LazyColumn(Modifier.weight(1f).padding(horizontal = 26.dp)) {
-            item {
-                Rotulo(estado.pestana.rotulo(), Verde, Modifier.padding(top = 24.dp, bottom = 18.dp))
-            }
-            val error = estado.error
-            if (estado.cargando && estado.actividades.isEmpty()) {
-                item { Cargando("Cargando actividades…") }
-            } else if (error != null) {
-                item { EstadoError("No se pudo cargar la agenda", error, vm::cargarAgenda, Modifier.padding(horizontal = 0.dp)) }
-            } else if (estado.actividades.isEmpty()) {
+        DeslizarParaRecargar(vm::recargar, Modifier.weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 26.dp)) {
                 item {
-                    Column(
-                        Modifier.fillMaxWidth().padding(top = 34.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Titulo("No hay actividades programadas", 32)
-                        Cuerpo("Para ese día todavía no se programa nada. En cuanto la administración lo publique aparecerá aquí y en el muro.",
-                            alineacion = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
-                        Spacer(Modifier.height(26.dp))
-                        // Desde Hoy se sugiere manana; desde las demas, regresar a hoy.
-                        if (estado.pestana == PestanaAgenda.HOY) {
-                            BotonPrincipal("Ver las de mañana", { vm.cambiarPestana(PestanaAgenda.MANANA) })
-                        } else {
-                            BotonPrincipal("Ver las de hoy", { vm.cambiarPestana(PestanaAgenda.HOY) })
+                    Rotulo(estado.pestana.rotulo(), Verde, Modifier.padding(top = 24.dp, bottom = 18.dp))
+                }
+                val error = estado.error
+                if (estado.cargando && estado.actividades.isEmpty()) {
+                    item { Cargando("Cargando actividades…") }
+                } else if (error != null) {
+                    item { EstadoError("No se pudo cargar la agenda", error, vm::cargarAgenda, Modifier.padding(horizontal = 0.dp)) }
+                } else if (estado.actividades.isEmpty()) {
+                    item {
+                        Column(
+                            Modifier.fillMaxWidth().padding(top = 34.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Titulo("No hay actividades programadas", 32)
+                            Cuerpo("Para ese día todavía no se programa nada. En cuanto la administración lo publique aparecerá aquí y en el muro.",
+                                alineacion = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
+                            Spacer(Modifier.height(26.dp))
+                            // Desde Hoy se sugiere manana; desde las demas, regresar a hoy.
+                            if (estado.pestana == PestanaAgenda.HOY) {
+                                BotonPrincipal("Ver las de mañana", { vm.cambiarPestana(PestanaAgenda.MANANA) })
+                            } else {
+                                BotonPrincipal("Ver las de hoy", { vm.cambiarPestana(PestanaAgenda.HOY) })
+                            }
+                        }
+                    }
+                } else {
+                    items(estado.actividades, key = { it.postId }) { a ->
+                        Tarjeta(Modifier.padding(bottom = 14.dp), radio = 26) {
+                            Column(Modifier.clickable { onAbrirDetalle(a.postId) }.padding(horizontal = 22.dp, vertical = 20.dp)) {
+                                Rotulo(a.hora, Verde)
+                                Rotulo(a.lugar, Laton, Modifier.padding(top = 7.dp))
+                                Cuerpo(a.titulo, 19, Tinta, negrita = true, modifier = Modifier.padding(top = 12.dp))
+                                Cuerpo(a.nota, 17, Gris, modifier = Modifier.padding(top = 6.dp))
+                            }
                         }
                     }
                 }
-            } else {
-                items(estado.actividades, key = { it.postId }) { a ->
-                    Tarjeta(Modifier.padding(bottom = 14.dp), radio = 26) {
-                        Column(Modifier.clickable { onAbrirDetalle(a.postId) }.padding(horizontal = 22.dp, vertical = 20.dp)) {
-                            Rotulo(a.hora, Verde)
-                            Rotulo(a.lugar, Laton, Modifier.padding(top = 7.dp))
-                            Cuerpo(a.titulo, 19, Tinta, negrita = true, modifier = Modifier.padding(top = 12.dp))
-                            Cuerpo(a.nota, 17, Gris, modifier = Modifier.padding(top = 6.dp))
-                        }
+                item {
+                    estado.errorMas?.let { Cuerpo(it.mensaje, 17, Gris, modifier = Modifier.padding(vertical = 12.dp)) }
+                    if (estado.hayMas) {
+                        BotonSecundario(
+                            if (estado.cargandoMas) "Cargando…" else if (estado.errorMas != null) "Reintentar" else "Cargar más actividades",
+                            vm::cargarMas, habilitado = !estado.cargandoMas && !estado.cargando
+                        )
                     }
+                    Spacer(Modifier.height(30.dp))
                 }
-            }
-            item {
-                estado.errorMas?.let { Cuerpo(it.mensaje, 17, Gris, modifier = Modifier.padding(vertical = 12.dp)) }
-                if (estado.hayMas) {
-                    BotonSecundario(
-                        if (estado.cargandoMas) "Cargando…" else if (estado.errorMas != null) "Reintentar" else "Cargar más actividades",
-                        vm::cargarMas, habilitado = !estado.cargandoMas && !estado.cargando
-                    )
-                }
-                Spacer(Modifier.height(30.dp))
             }
         }
     }

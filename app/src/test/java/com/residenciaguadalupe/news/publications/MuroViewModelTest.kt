@@ -121,4 +121,48 @@ class MuroViewModelTest : PruebaPublicaciones() {
         assertNull(vm.estado.value.muroError)
         assertEquals("8", vm.estado.value.usuario!!.id)
     }
+
+    @Test fun `volver a la app recarga sin vaciar el muro`() = runTest {
+        var siguiente: CompletableDeferred<Pagina<Publicacion>>? = null
+        repo.listar = { f, p, l ->
+            if (f.eventoDesde != null) Pagina(emptyList(), p, l, 0)
+            else siguiente?.await() ?: Pagina(listOf(publicacionPrueba("1")), p, l, 1)
+        }
+        val vm = conservar(MuroViewModel(repo, gestor))
+        runCurrent()
+        vm.alVolver()
+        runCurrent()
+        assertTrue(repo.consultas.isEmpty())
+        vm.refrescarSiHaceFalta()
+        runCurrent()
+        val nueva = CompletableDeferred<Pagina<Publicacion>>()
+        siguiente = nueva
+        vm.alVolver()
+        runCurrent()
+        assertTrue(vm.estado.value.recargando)
+        assertFalse(vm.estado.value.cargando)
+        assertEquals(listOf("1"), vm.estado.value.publicaciones.map { it.id })
+        nueva.complete(Pagina(listOf(publicacionPrueba("2"), publicacionPrueba("1")), 1, 20, 2))
+        runCurrent()
+        assertEquals(listOf("2", "1"), vm.estado.value.publicaciones.map { it.id })
+        assertFalse(vm.estado.value.recargando)
+    }
+
+    @Test fun `fallo al deslizar avisa sin quitar el muro`() = runTest {
+        var fallar = false
+        repo.listar = { _, p, l ->
+            if (fallar) throw ErrorApi(-1, "NETWORK", "Sin conexion.")
+            Pagina(listOf(publicacionPrueba("1")), p, l, 1)
+        }
+        val vm = conservar(MuroViewModel(repo, gestor))
+        runCurrent()
+        vm.refrescarSiHaceFalta()
+        runCurrent()
+        fallar = true
+        vm.recargar()
+        assertEquals(listOf("1"), vm.estado.value.publicaciones.map { it.id })
+        assertNull(vm.estado.value.muroError)
+        assertNotNull(vm.estado.value.mensaje)
+        assertFalse(vm.estado.value.recargando)
+    }
 }

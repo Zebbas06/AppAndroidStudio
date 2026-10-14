@@ -15,12 +15,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.residenciaguadalupe.news.publications.agenda.AgendaViewModel
@@ -124,6 +128,25 @@ fun AppResidencia(vm: ArranqueViewModel, perfil: PerfilViewModel) {
     val muro: MuroViewModel = viewModel(factory = fabricaMuro)
     val estadoMuro by muro.estado.collectAsState()
     val agenda: AgendaViewModel = viewModel(factory = fabricaAgenda)
+
+    // Al volver a primer plano se consulta otra vez lo ya abierto, sin vaciarlo:
+    // otro dispositivo (p. ej. administracion) pudo publicar mientras tanto.
+    val duenoCiclo = LocalLifecycleOwner.current
+    DisposableEffect(duenoCiclo) {
+        var primera = true
+        val observador = LifecycleEventObserver { _, evento ->
+            if (evento != Lifecycle.Event.ON_START) return@LifecycleEventObserver
+            // El primer ON_START es la apertura: cada pantalla ya carga lo suyo.
+            if (primera) primera = false
+            else {
+                muro.alVolver()
+                agenda.alVolver()
+                notificaciones.alVolver()
+            }
+        }
+        duenoCiclo.lifecycle.addObserver(observador)
+        onDispose { duenoCiclo.lifecycle.removeObserver(observador) }
+    }
     val fabricaAdmin = remember(aplicacion) {
         viewModelFactory { initializer { AdminPublicacionesViewModel(aplicacion.publicaciones, aplicacion.sesion) } }
     }
