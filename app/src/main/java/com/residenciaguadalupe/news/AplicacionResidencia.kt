@@ -21,6 +21,8 @@ import com.residenciaguadalupe.news.auth.data.RepositorioAutenticacion
 import com.residenciaguadalupe.news.auth.data.RepositorioAutenticacionApi
 import com.residenciaguadalupe.news.core.session.AlmacenSesionPreferencias
 import com.residenciaguadalupe.news.core.session.GestorSesion
+import com.residenciaguadalupe.news.core.voz.LectorVoz
+import com.residenciaguadalupe.news.core.voz.LectorVozAndroid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,6 +63,8 @@ class AplicacionResidencia : Application(), ImageLoaderFactory {
     val medios: RepositorioMedios by lazy {
         RepositorioMediosApi(cliente, sesion, FuenteArchivosAndroid(contentResolver), carpetaAdjuntos)
     }
+
+    val voz: LectorVoz by lazy { LectorVozAndroid(this) }
 
     /** Nunca limpiar un upload anterior con las credenciales de otra cuenta. */
     fun descartarAdjunto(adjunto: Adjunto, token: String) {

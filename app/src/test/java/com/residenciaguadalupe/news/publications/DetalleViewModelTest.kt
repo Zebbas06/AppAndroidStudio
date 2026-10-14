@@ -1,6 +1,7 @@
 package com.residenciaguadalupe.news.publications
 
 import com.residenciaguadalupe.news.core.session.Sesion
+import com.residenciaguadalupe.news.core.voz.LectorVoz
 import com.residenciaguadalupe.news.data.*
 import com.residenciaguadalupe.news.data.red.ErrorApi
 import com.residenciaguadalupe.news.publications.detail.DetalleViewModel
@@ -17,8 +18,9 @@ import java.time.Instant
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DetalleViewModelTest : PruebaPublicaciones() {
+    private val voz = VozFalsa()
     private fun modelo(descargar: suspend (Adjunto) -> File = { error("No esperado") }) =
-        conservar(DetalleViewModel(repo, gestor, descargar))
+        conservar(DetalleViewModel(repo, gestor, descargar, voz))
 
     @Test fun `residente registra lectura una sola vez al abrir`() = runTest {
         val vm = modelo()
@@ -140,4 +142,72 @@ class DetalleViewModelTest : PruebaPublicaciones() {
         assertFalse(vm.estado.value.esResidente)
         assertFalse(vm.estado.value.detalleCargando)
     }
+
+    @Test fun `escuchar lee titulo y texto y al terminar vuelve al boton`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.abrirDetalle("7")
+        runCurrent()
+        vm.alternarVoz()
+        assertEquals(listOf("Aviso 7. Texto."), voz.textos)
+        assertTrue(vm.estado.value.leyendoEnVoz)
+        voz.alTerminar!!(null)
+        assertFalse(vm.estado.value.leyendoEnVoz)
+        assertNull(vm.estado.value.mensaje)
+    }
+
+    @Test fun `detener lectura calla la voz`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.abrirDetalle("7")
+        runCurrent()
+        vm.alternarVoz()
+        vm.alternarVoz()
+        assertEquals(1, voz.detenciones)
+        assertFalse(vm.estado.value.leyendoEnVoz)
+    }
+
+    @Test fun `telefono sin voz muestra aviso`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.abrirDetalle("7")
+        runCurrent()
+        vm.alternarVoz()
+        voz.alTerminar!!("Sin voz")
+        assertFalse(vm.estado.value.leyendoEnVoz)
+        assertEquals("Sin voz", vm.estado.value.mensaje)
+    }
+
+    @Test fun `escuchar desde el muro empieza a leer al cargar`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.abrirDetalle("7", leerAlAbrir = true)
+        runCurrent()
+        assertEquals(1, voz.textos.size)
+        assertTrue(vm.estado.value.leyendoEnVoz)
+    }
+
+    @Test fun `salir del detalle detiene la lectura y la ignora despues`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.abrirDetalle("7")
+        runCurrent()
+        vm.alternarVoz()
+        val tardio = voz.alTerminar!!
+        vm.cerrarDetalle()
+        assertEquals(1, voz.detenciones)
+        tardio("Sin voz")
+        assertNull(vm.estado.value.mensaje)
+        // Otra pantalla sin lectura propia no calla el lector compartido.
+        vm.cerrarDetalle()
+        assertEquals(1, voz.detenciones)
+    }
+}
+
+class VozFalsa : LectorVoz {
+    val textos = mutableListOf<String>()
+    var alTerminar: ((String?) -> Unit)? = null
+    var detenciones = 0
+    override fun leer(texto: String, alTerminar: (String?) -> Unit) { textos += texto; this.alTerminar = alTerminar }
+    override fun detener() { detenciones++ }
 }

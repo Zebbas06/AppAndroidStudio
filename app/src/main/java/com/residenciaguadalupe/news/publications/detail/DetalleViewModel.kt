@@ -3,6 +3,7 @@ package com.residenciaguadalupe.news.publications.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.residenciaguadalupe.news.core.session.GestorSesion
+import com.residenciaguadalupe.news.core.voz.LectorVoz
 import com.residenciaguadalupe.news.data.*
 import com.residenciaguadalupe.news.data.red.ErrorApi
 import com.residenciaguadalupe.news.publications.data.RepositorioPublicaciones
@@ -30,7 +31,8 @@ data class EstadoDetalle(
 class DetalleViewModel(
     private val repo: RepositorioPublicaciones,
     private val gestor: GestorSesion,
-    private val descargar: suspend (Adjunto) -> File
+    private val descargar: suspend (Adjunto) -> File,
+    private val voz: LectorVoz
 ) : ViewModel() {
     private val mutableEstado = MutableStateFlow(EstadoDetalle(esResidente = residente()))
     val estado = mutableEstado.asStateFlow()
@@ -40,7 +42,8 @@ class DetalleViewModel(
     private var trabajoAdjunto: Job? = null
     private fun residente() = gestor.estado.value.sesion?.usuario?.rol == Rol.RESIDENTE
 
-    fun abrirDetalle(id: String, forzar: Boolean = false) {
+    /** [leerAlAbrir]: viene del boton "Escuchar" del muro y empieza a leer en cuanto carga. */
+    fun abrirDetalle(id: String, forzar: Boolean = false, leerAlAbrir: Boolean = false) {
         if (gestor.estado.value.sesion == null || id.isBlank()) return
         if (!forzar && estado.value.detalle?.id == id && estado.value.detalleError == null) return
         cerrarDetalle()
@@ -52,6 +55,7 @@ class DetalleViewModel(
                 coroutineContext.ensureActive()
                 if (turno != solicitud) return@lanzar
                 mutableEstado.update { it.copy(detalle = p) }
+                if (leerAlAbrir) leerEnVoz()
                 if (residente() && !p.leida) {
                     try {
                         repo.marcarLeida(id)
@@ -107,17 +111,42 @@ class DetalleViewModel(
     fun avisar(texto: String) { mutableEstado.update { it.copy(mensaje = texto) } }
     fun ocultarMensaje() { mutableEstado.update { it.copy(mensaje = null) } }
 
-    // Se conserva el indicador existente; la integracion real con TTS sigue pendiente.
-    fun alternarVoz() { mutableEstado.update { it.copy(leyendoEnVoz = !it.leyendoEnVoz) } }
+    fun alternarVoz() { if (estado.value.leyendoEnVoz) detenerVoz() else leerEnVoz() }
+
+    private fun leerEnVoz() {
+        val p = estado.value.detalle ?: return
+        val turno = solicitud
+        mutableEstado.update { it.copy(leyendoEnVoz = true, mensaje = null) }
+        voz.leer(textoParaLeer(p)) { error ->
+            if (turno == solicitud) mutableEstado.update { it.copy(leyendoEnVoz = false, mensaje = error ?: it.mensaje) }
+        }
+    }
+
+    /** Solo detiene la voz si esta pantalla la inicio: el lector es compartido. */
+    private fun detenerVoz() {
+        if (!estado.value.leyendoEnVoz) return
+        voz.detener()
+        mutableEstado.update { it.copy(leyendoEnVoz = false) }
+    }
+
+    /** Titulo, cuerpo y, si los trae, cuando y donde. */
+    private fun textoParaLeer(p: Publicacion): String =
+        listOfNotNull(p.titulo, p.texto, p.cuando?.let { "Cuándo: $it" }, p.eventoLugar?.let { "Dónde: $it" })
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" ") { if (it.last() in ".!?…:;") it else "$it." }
 
     /** Cancela tambien reacciones y descargas al salir o cambiar de publicacion. */
     fun cerrarDetalle() {
+        detenerVoz()
         solicitud++
         trabajoDetalle?.cancel()
         trabajoReaccion?.cancel()
         trabajoAdjunto?.cancel()
         mutableEstado.value = EstadoDetalle(esResidente = residente())
     }
+
+    override fun onCleared() { detenerVoz() }
 
     init {
         var revision = gestor.estado.value.revision
