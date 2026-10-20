@@ -257,6 +257,35 @@ class NotificacionesViewModelTest {
         assertEquals(0, vm.estado.value.sinLeer)
         assertFalse(vm.estado.value.cargando)
     }
+
+    @Test fun `volver sin abrir el buzon solo actualiza la insignia`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        repo.contador = 4
+        vm.alVolver()
+        runCurrent()
+        assertEquals(4, vm.estado.value.sinLeer)
+        assertEquals(2, repo.consultasContador)
+        assertTrue(repo.paginas.isEmpty())
+    }
+
+    @Test fun `deslizar con buzon abierto recarga y un fallo solo avisa`() = runTest {
+        val vm = modelo()
+        runCurrent()
+        vm.cargarNotificaciones()
+        runCurrent()
+        repo.filas = listOf(notificacion("2"), notificacion("1"))
+        repo.contador = 2
+        vm.recargar()
+        assertEquals(listOf("2", "1"), vm.estado.value.notificaciones.map { it.id })
+        assertEquals(2, vm.estado.value.sinLeer)
+        repo.listar = { throw ErrorApi(-1, "NETWORK", "Sin conexion.") }
+        vm.recargar()
+        assertEquals(listOf("2", "1"), vm.estado.value.notificaciones.map { it.id })
+        assertNull(vm.estado.value.error)
+        assertNotNull(vm.estado.value.mensaje)
+        assertFalse(vm.estado.value.cargando)
+    }
 }
 
 private fun notificacion(id: String) = Notificacion(id, "Nuevo aviso", "Titulo", "Texto", "Hoy", false, "7")

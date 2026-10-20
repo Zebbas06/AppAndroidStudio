@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlin.coroutines.coroutineContext
 
@@ -21,6 +22,8 @@ data class EstadoMuro(
     val filtro: String = "TODO",
     val publicaciones: List<Publicacion> = emptyList(),
     val cargando: Boolean = false,
+    /** Recarga sin vaciar la lista (deslizar o volver a la app). */
+    val recargando: Boolean = false,
     val cargandoMas: Boolean = false,
     val muroError: ErrorApi? = null,
     val muroHayMas: Boolean = false,
@@ -57,6 +60,19 @@ class MuroViewModel(
         }
     }
 
+    /** Deslizar hacia abajo: regresa cuando terminan muro y banda. */
+    suspend fun recargar() {
+        listOfNotNull(cargar(silencioso = true), cargarBandaHoy()).joinAll()
+    }
+
+    /** La app volvio a primer plano: otro dispositivo pudo publicar mientras tanto. */
+    fun alVolver() {
+        if (iniciado) {
+            cargar(silencioso = true)
+            cargarBandaHoy()
+        }
+    }
+
     fun cambiarFiltro(nuevo: String) {
         if (nuevo !in setOf("TODO", "FOTO", "AVISO", "ACTIVIDAD", "EVENTO", "NOTICIA")) return
         if (nuevo == estado.value.filtro) return
@@ -70,16 +86,21 @@ class MuroViewModel(
         else -> FiltroPublicaciones(categoria = Categoria.valueOf(filtro))
     }
 
-    fun cargarMuro() {
-        if (gestor.estado.value.sesion == null) return
+    fun cargarMuro() { cargar(silencioso = false) }
+
+    /** [silencioso] conserva lo visible y avisa el error sin quitar la lista. */
+    private fun cargar(silencioso: Boolean): Job? {
+        if (gestor.estado.value.sesion == null) return null
         val turno = ++solicitud
         trabajo?.cancel()
         val filtro = filtroMuro()
         revisionContenido = repo.cambios.value
         desactualizado = false
         iniciado = true
-        mutableEstado.update { it.copy(cargando = true, cargandoMas = false, muroError = null, mensaje = null) }
-        trabajo = gestor.lanzar(viewModelScope) {
+        mutableEstado.update {
+            it.copy(cargando = !silencioso, recargando = silencioso, cargandoMas = false, muroError = null, mensaje = null)
+        }
+        val nuevo = gestor.lanzar(viewModelScope) {
             try {
                 val p = repo.publicaciones(filtro, 1)
                 coroutineContext.ensureActive()
@@ -88,16 +109,20 @@ class MuroViewModel(
                     mutableEstado.update { it.copy(publicaciones = p.elementos, muroHayMas = p.hayMas) }
                 }
             } catch (e: ErrorApi) {
-                if (turno == solicitud) mutableEstado.update { it.copy(muroError = e) }
+                if (turno == solicitud) mutableEstado.update {
+                    if (silencioso && it.publicaciones.isNotEmpty()) it.copy(mensaje = e.mensaje) else it.copy(muroError = e)
+                }
             } finally {
-                if (turno == solicitud) mutableEstado.update { it.copy(cargando = false) }
+                if (turno == solicitud) mutableEstado.update { it.copy(cargando = false, recargando = false) }
             }
         }
+        trabajo = nuevo
+        return nuevo
     }
 
     fun cargarMasMuro() {
         val actual = estado.value
-        if (actual.cargandoMas || actual.cargando || !actual.muroHayMas || gestor.estado.value.sesion == null) return
+        if (actual.cargandoMas || actual.cargando || actual.recargando || !actual.muroHayMas || gestor.estado.value.sesion == null) return
         val turno = ++solicitud
         val filtro = filtroMuro()
         val siguiente = pagina + 1
@@ -120,12 +145,12 @@ class MuroViewModel(
         }
     }
 
-    fun cargarBandaHoy() {
+    fun cargarBandaHoy(): Job {
         val turno = ++solicitudBanda
         trabajoBanda?.cancel()
         val filtro = filtroAgenda(PestanaAgenda.HOY)
         mutableEstado.update { it.copy(bandaCargando = true, bandaError = null) }
-        trabajoBanda = gestor.lanzar(viewModelScope) {
+        val nuevo = gestor.lanzar(viewModelScope) {
             try {
                 val p = repo.publicaciones(filtro, 1, 20)
                 coroutineContext.ensureActive()
@@ -139,6 +164,8 @@ class MuroViewModel(
                 if (turno == solicitudBanda) mutableEstado.update { it.copy(bandaCargando = false) }
             }
         }
+        trabajoBanda = nuevo
+        return nuevo
     }
 
     fun ocultarMensaje() { mutableEstado.update { it.copy(mensaje = null) } }

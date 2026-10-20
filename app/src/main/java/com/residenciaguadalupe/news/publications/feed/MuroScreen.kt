@@ -41,6 +41,7 @@ private val FILTROS = listOf("TODO" to "Todo", "AVISO" to "Avisos", "ACTIVIDAD" 
 fun MuroScreen(
     vm: MuroViewModel,
     onAbrirDetalle: (String) -> Unit,
+    onEscuchar: (String) -> Unit,
     onAgenda: () -> Unit,
     onArchivo: () -> Unit,
     onAdministracion: () -> Unit
@@ -68,33 +69,35 @@ fun MuroScreen(
         }
         Linea()
 
-        LazyColumn(Modifier.weight(1f)) {
+        DeslizarParaRecargar(vm::recargar, Modifier.weight(1f)) {
+            LazyColumn(Modifier.fillMaxSize()) {
 
-            item { BandaHoy(vm, onAbrirDetalle, onAgenda) }
+                item { BandaHoy(vm, onAbrirDetalle, onAgenda) }
 
-            item { FilaFiltros(vm) }
+                item { FilaFiltros(vm) }
 
-            val error = estado.muroError
-            when {
-                estado.cargando -> item { TarjetaEsqueleto() }
-                error != null -> item { EstadoError("No se pudo cargar el muro", error, vm::cargarMuro) }
-                estado.publicaciones.isEmpty() -> item { SinResultados(vm, onArchivo) }
-                else -> {
-                    items(estado.publicaciones, key = { it.id }) { p ->
-                        TarjetaPublicacion(p, estado.esResidente, { onAbrirDetalle(p.id) },
-                            Modifier.padding(horizontal = 26.dp, vertical = 9.dp))
-                    }
-                    item {
-                        Column(Modifier.padding(26.dp)) {
-                            if (estado.muroHayMas) {
-                                BotonPrincipal(if (estado.cargandoMas) "Cargando…" else "Cargar más publicaciones",
-                                    vm::cargarMasMuro, habilitado = !estado.cargandoMas)
-                                Spacer(Modifier.height(12.dp))
+                val error = estado.muroError
+                when {
+                    estado.cargando -> item { TarjetaEsqueleto() }
+                    error != null -> item { EstadoError("No se pudo cargar el muro", error, vm::cargarMuro) }
+                    estado.publicaciones.isEmpty() -> item { SinResultados(vm, onArchivo) }
+                    else -> {
+                        items(estado.publicaciones, key = { it.id }) { p ->
+                            TarjetaPublicacion(p, estado.esResidente, { onAbrirDetalle(p.id) }, { onEscuchar(p.id) },
+                                Modifier.padding(horizontal = 26.dp, vertical = 9.dp))
+                        }
+                        item {
+                            Column(Modifier.padding(26.dp)) {
+                                if (estado.muroHayMas) {
+                                    BotonPrincipal(if (estado.cargandoMas) "Cargando…" else "Cargar más publicaciones",
+                                        vm::cargarMasMuro, habilitado = !estado.cargandoMas)
+                                    Spacer(Modifier.height(12.dp))
+                                }
+                                BotonSecundario("Ver publicaciones anteriores", onArchivo)
+                                Cuerpo("Residencia Guadalupe · Cuernavaca", 16, Gris,
+                                    alineacion = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp))
                             }
-                            BotonSecundario("Ver publicaciones anteriores", onArchivo)
-                            Cuerpo("Fundación sin fines de lucro · Cuernavaca", 16, Gris,
-                                alineacion = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth().padding(top = 22.dp))
                         }
                     }
                 }
@@ -117,7 +120,8 @@ private fun BandaHoy(vm: MuroViewModel, onDetalle: (String) -> Unit, onAgenda: (
         ) {
             Rotulo("Hoy en la residencia", Oro, Modifier.padding(bottom = 16.dp))
 
-            if (estado.bandaCargando) {
+            // Al recargar se conservan las actividades visibles hasta que llega la respuesta.
+            if (estado.bandaCargando && items.isEmpty()) {
                 Cuerpo("Cargando actividades…", 18, Hueso)
             } else if (estado.bandaError != null) {
                 Cuerpo("No se pudieron cargar las actividades de hoy.", 18, Hueso)
@@ -238,7 +242,13 @@ private fun SinResultados(vm: MuroViewModel, onArchivo: () -> Unit) {
 
 /** Tarjeta de publicacion del muro. "Nuevo" = el residente aun no la lee. */
 @Composable
-fun TarjetaPublicacion(p: Publicacion, esResidente: Boolean, onAbrir: () -> Unit, modifier: Modifier = Modifier) {
+fun TarjetaPublicacion(
+    p: Publicacion,
+    esResidente: Boolean,
+    onAbrir: () -> Unit,
+    onEscuchar: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Tarjeta(
         modifier = modifier,
         borde = if (p.fijada) androidx.compose.foundation.BorderStroke(1.dp, LatonClaro) else null
@@ -277,7 +287,7 @@ fun TarjetaPublicacion(p: Publicacion, esResidente: Boolean, onAbrir: () -> Unit
         Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             BotonPrincipal("Leer aviso", onAbrir, Modifier.weight(1f), tamano = 15)
-            BotonSecundario("Escuchar", onAbrir, Modifier.weight(1f))
+            BotonSecundario("Escuchar", onEscuchar, Modifier.weight(1f))
         }
     }
 }

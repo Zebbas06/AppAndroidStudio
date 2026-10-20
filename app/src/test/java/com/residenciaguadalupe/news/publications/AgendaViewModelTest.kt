@@ -171,4 +171,60 @@ class AgendaViewModelTest : PruebaPublicaciones() {
         assertFalse(vm.estado.value.hayMas)
         assertNull(vm.estado.value.error)
     }
+
+    @Test fun `volver a la app recarga el mismo dia sin vaciar filas`() = runTest {
+        var siguiente: CompletableDeferred<Pagina<Publicacion>>? = null
+        repo.listar = { _, p, l -> siguiente?.await() ?: Pagina(listOf(publicacionPrueba("1")), p, l, 1) }
+        val vm = conservar(AgendaViewModel(repo, gestor))
+        runCurrent()
+        vm.alVolver()
+        runCurrent()
+        assertTrue(repo.consultas.isEmpty())
+        vm.refrescarSiHaceFalta()
+        runCurrent()
+        val nueva = CompletableDeferred<Pagina<Publicacion>>()
+        siguiente = nueva
+        vm.alVolver()
+        runCurrent()
+        assertTrue(vm.estado.value.recargando)
+        assertEquals(listOf("1"), vm.estado.value.actividades.map { it.postId })
+        nueva.complete(Pagina(listOf(publicacionPrueba("2")), 1, 100, 1))
+        runCurrent()
+        assertEquals(listOf("2"), vm.estado.value.actividades.map { it.postId })
+        assertFalse(vm.estado.value.recargando)
+    }
+
+    @Test fun `volver otro dia no conserva filas del dia anterior`() = runTest {
+        var dia = LocalDate.of(2026, 10, 5)
+        val pendiente = CompletableDeferred<Pagina<Publicacion>>()
+        repo.listar = { _, p, l -> if (p == 1 && repo.consultas.size > 1) pendiente.await() else Pagina(listOf(publicacionPrueba()), p, l, 1) }
+        val vm = conservar(AgendaViewModel(repo, gestor) { dia })
+        runCurrent()
+        vm.cargarAgenda()
+        runCurrent()
+        dia = dia.plusDays(1)
+        vm.alVolver()
+        runCurrent()
+        assertTrue(vm.estado.value.cargando)
+        assertTrue(vm.estado.value.actividades.isEmpty())
+        assertEquals(Fechas.inicioDelDia(dia), repo.consultas.last().first.eventoDesde)
+    }
+
+    @Test fun `fallo al deslizar conserva filas y no muestra error de pantalla`() = runTest {
+        var fallar = false
+        repo.listar = { _, p, l ->
+            if (fallar) throw ErrorApi(-1, "NETWORK", "Sin conexion.")
+            Pagina(listOf(publicacionPrueba()), p, l, 1)
+        }
+        val vm = conservar(AgendaViewModel(repo, gestor))
+        runCurrent()
+        vm.cargarAgenda()
+        runCurrent()
+        fallar = true
+        vm.recargar()
+        assertEquals(1, vm.estado.value.actividades.size)
+        assertNull(vm.estado.value.error)
+        assertNotNull(vm.estado.value.errorMas)
+        assertFalse(vm.estado.value.recargando)
+    }
 }

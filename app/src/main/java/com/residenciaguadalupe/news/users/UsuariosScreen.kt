@@ -45,7 +45,7 @@ fun UsuariosScreen(vm: UsuariosViewModel, onVolver: () -> Unit, onAbrir: (String
                 CampoTexto("Buscar", vm.busqueda, vm::cambiarBusqueda, Modifier.weight(1f),
                     placeholder = "Nombre o correo")
                 Spacer(Modifier.width(10.dp))
-                Box(Modifier.width(110.dp)) { BotonSecundario("Buscar", { vm.cargar() }) }
+                Box(Modifier.widthIn(min = 110.dp).width(IntrinsicSize.Max)) { BotonSecundario("Buscar", { vm.cargar() }) }
             }
         }
         Linea()

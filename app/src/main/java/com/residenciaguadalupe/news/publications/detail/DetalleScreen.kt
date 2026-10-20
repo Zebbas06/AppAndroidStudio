@@ -38,10 +38,10 @@ import java.io.File
  * en voz alta. Al abrirse registra la lectura del residente.
  */
 @Composable
-fun DetalleScreen(vm: DetalleViewModel, postId: String, onVolver: () -> Unit, onAgenda: () -> Unit) {
+fun DetalleScreen(vm: DetalleViewModel, postId: String, escuchar: Boolean, onVolver: () -> Unit, onAgenda: () -> Unit) {
     val estado by vm.estado.collectAsState()
     DisposableEffect(postId) { onDispose { vm.cerrarDetalle() } }
-    LaunchedEffect(postId) { vm.abrirDetalle(postId) }
+    LaunchedEffect(postId) { vm.abrirDetalle(postId, leerAlAbrir = escuchar) }
     val contexto = LocalContext.current
 
     Box(Modifier.fillMaxSize().background(Crema)) {

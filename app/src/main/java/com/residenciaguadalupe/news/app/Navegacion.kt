@@ -15,12 +15,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.residenciaguadalupe.news.publications.agenda.AgendaViewModel
@@ -58,7 +62,7 @@ object Rutas {
     const val ACCESO = "acceso"
     const val MURO = "muro"
     const val HOY = "hoy"
-    const val DETALLE = "detalle/{postId}"
+    const val DETALLE = "detalle/{postId}?escuchar={escuchar}"
     const val AVISOS = "avisos"
     const val PERFIL = "perfil"
     const val ARCHIVO = "archivo"
@@ -68,7 +72,8 @@ object Rutas {
     const val USUARIO = "usuario/{id}"
 
     fun editor(postId: String? = null) = if (postId == null) "admin_crear" else "admin_crear?postId=${android.net.Uri.encode(postId)}"
-    fun detalle(postId: String) = "detalle/$postId"
+    /** [escuchar]: abre el aviso y empieza a leerlo en voz alta. */
+    fun detalle(postId: String, escuchar: Boolean = false) = "detalle/$postId" + if (escuchar) "?escuchar=true" else ""
     /** "nuevo" = alta. */
     fun usuario(id: String?) = "usuario/${id ?: "nuevo"}"
 }
@@ -118,12 +123,31 @@ fun AppResidencia(vm: ArranqueViewModel, perfil: PerfilViewModel) {
     }
     val fabricaDetalle = remember(aplicacion) {
         viewModelFactory {
-            initializer { DetalleViewModel(aplicacion.publicaciones, aplicacion.sesion, aplicacion.medios::descargar) }
+            initializer { DetalleViewModel(aplicacion.publicaciones, aplicacion.sesion, aplicacion.medios::descargar, aplicacion.voz) }
         }
     }
     val muro: MuroViewModel = viewModel(factory = fabricaMuro)
     val estadoMuro by muro.estado.collectAsState()
     val agenda: AgendaViewModel = viewModel(factory = fabricaAgenda)
+
+    // Al volver a primer plano se consulta otra vez lo ya abierto, sin vaciarlo:
+    // otro dispositivo (p. ej. administracion) pudo publicar mientras tanto.
+    val duenoCiclo = LocalLifecycleOwner.current
+    DisposableEffect(duenoCiclo) {
+        var primera = true
+        val observador = LifecycleEventObserver { _, evento ->
+            if (evento != Lifecycle.Event.ON_START) return@LifecycleEventObserver
+            // El primer ON_START es la apertura: cada pantalla ya carga lo suyo.
+            if (primera) primera = false
+            else {
+                muro.alVolver()
+                agenda.alVolver()
+                notificaciones.alVolver()
+            }
+        }
+        duenoCiclo.lifecycle.addObserver(observador)
+        onDispose { duenoCiclo.lifecycle.removeObserver(observador) }
+    }
     val fabricaAdmin = remember(aplicacion) {
         viewModelFactory { initializer { AdminPublicacionesViewModel(aplicacion.publicaciones, aplicacion.sesion) } }
     }
@@ -194,14 +218,19 @@ fun AppResidencia(vm: ArranqueViewModel, perfil: PerfilViewModel) {
                 composable(Rutas.MURO) {
                     MuroScreen(muro,
                         onAbrirDetalle = ::abrirDetalle,
+                        onEscuchar = { nav.navigate(Rutas.detalle(it, escuchar = true)) },
                         onAgenda = { ir(Rutas.HOY) },
                         onArchivo = { nav.navigate(Rutas.ARCHIVO) },
                         onAdministracion = { nav.navigate(Rutas.ADMIN_LISTA) })
                 }
                 composable(Rutas.HOY) { HoyScreen(agenda, ::abrirDetalle) }
-                composable(Rutas.DETALLE, listOf(navArgument("postId") { type = NavType.StringType })) { e ->
+                composable(Rutas.DETALLE, listOf(
+                    navArgument("postId") { type = NavType.StringType },
+                    navArgument("escuchar") { type = NavType.BoolType; defaultValue = false }
+                )) { e ->
                     val detalle: DetalleViewModel = viewModel(viewModelStoreOwner = e, factory = fabricaDetalle)
                     DetalleScreen(detalle, e.arguments?.getString("postId").orEmpty(),
+                        escuchar = e.arguments?.getBoolean("escuchar") ?: false,
                         onVolver = { nav.popBackStack() }, onAgenda = { ir(Rutas.HOY) })
                 }
                 composable(Rutas.AVISOS) {
