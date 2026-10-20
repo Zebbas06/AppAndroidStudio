@@ -93,6 +93,8 @@ dependencies {
     // Imagenes y PDF privados: Coil comparte el OkHttp autenticado y se
     // configura sin cache en disco (Cache-Control: private, no-store).
     implementation("io.coil-kt:coil-compose:2.6.0")
+    // Rotacion EXIF al convertir fotos de camara o galeria a JPG.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

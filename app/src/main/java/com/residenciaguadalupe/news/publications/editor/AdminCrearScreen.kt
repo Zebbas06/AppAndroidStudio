@@ -1,6 +1,10 @@
 package com.residenciaguadalupe.news.publications.editor
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,15 +17,22 @@ import androidx.compose.material3.Text
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.residenciaguadalupe.news.data.*
 import com.residenciaguadalupe.news.ui.componentes.*
 import com.residenciaguadalupe.news.ui.theme.*
+import java.io.File
 
 /**
  * PANTALLA 9 — Administración · crear o editar aviso.
@@ -35,8 +46,21 @@ fun AdminCrearScreen(vm: EditorPublicacionViewModel, id: String?, onVolver: () -
     val editable = !vm.enviando && !vm.subiendo && !vm.cargandoEdicion
     val volver = { vm.cerrarEditor(); onVolver() }
     BackHandler(onBack = volver)
-    // Selector del sistema: solo JPG, PNG o PDF.
-    val elegirArchivo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val contexto = LocalContext.current
+    // Galeria: selector de fotos del sistema. Cualquier formato se convierte a JPG al subir.
+    val elegirFoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { vm.adjuntar(it.toString()) }
+    }
+    // Camara: escribe en cache/fotos/; la URI pendiente sobrevive a la rotacion.
+    var fotoPendiente by rememberSaveable { mutableStateOf<String?>(null) }
+    var errorCamara by rememberSaveable { mutableStateOf("") }
+    val tomarFoto = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { tomada ->
+        val uri = fotoPendiente
+        fotoPendiente = null
+        if (tomada && uri != null) vm.adjuntar(uri)
+    }
+    // PDF: selector de documentos, solo PDF.
+    val elegirPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.adjuntar(it.toString()) }
     }
 
@@ -134,7 +158,26 @@ fun AdminCrearScreen(vm: EditorPublicacionViewModel, id: String?, onVolver: () -
 
                 Spacer(Modifier.height(18.dp))
                 Linea()
-                FilaAdjunto(vm) { elegirArchivo.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) }
+                FilaAdjunto(
+                    vm,
+                    onGaleria = {
+                        errorCamara = ""
+                        elegirFoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    onCamara = {
+                        errorCamara = ""
+                        val uri = nuevaFoto(contexto)
+                        fotoPendiente = uri.toString()
+                        try {
+                            tomarFoto.launch(uri)
+                        } catch (e: ActivityNotFoundException) {
+                            fotoPendiente = null
+                            errorCamara = "Este teléfono no tiene una aplicación de cámara disponible."
+                        }
+                    },
+                    onPdf = { errorCamara = ""; elegirPdf.launch(arrayOf("application/pdf")) }
+                )
+                if (errorCamara.isNotEmpty()) Consejo(errorCamara, Modifier.padding(top = 14.dp))
 
                 if (vm.fError.isNotEmpty()) {
                     Consejo(vm.fError, Modifier.padding(top = 20.dp))
@@ -205,10 +248,24 @@ fun AdminCrearScreen(vm: EditorPublicacionViewModel, id: String?, onVolver: () -
     }
 }
 
-/** Un adjunto como maximo: foto JPG/PNG (5 MB) o PDF (9 MB). */
+/** Archivo vacio en cache/fotos/ para la camara; borra la foto anterior. */
+private fun nuevaFoto(contexto: Context): Uri {
+    val carpeta = File(contexto.cacheDir, "fotos").apply { deleteRecursively(); mkdirs() }
+    val archivo = File(carpeta, "foto-${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(contexto, "${contexto.packageName}.archivos", archivo)
+}
+
+/** Un adjunto como maximo: foto (5 MB) de la galeria o la camara, o PDF (9 MB). */
 @Composable
-private fun FilaAdjunto(vm: EditorPublicacionViewModel, onElegir: () -> Unit) {
+private fun FilaAdjunto(
+    vm: EditorPublicacionViewModel,
+    onGaleria: () -> Unit,
+    onCamara: () -> Unit,
+    onPdf: () -> Unit
+) {
     val a = vm.fAdjunto
+    val habilitado = !vm.subiendo && !vm.enviando && !vm.cargandoEdicion
+    var eligiendo by rememberSaveable { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Cuerpo("Fotografía o PDF", 18, Tinta, negrita = true)
@@ -225,11 +282,26 @@ private fun FilaAdjunto(vm: EditorPublicacionViewModel, onElegir: () -> Unit) {
         Box(
             Modifier.clip(RoundedCornerShape(999.dp)).background(Blanco)
                 .border(1.dp, HairlineGris, RoundedCornerShape(999.dp))
-                .clickable(enabled = !vm.subiendo && !vm.enviando && !vm.cargandoEdicion) { if (a != null) vm.quitarAdjunto() else onElegir() }
+                .clickable(enabled = habilitado) {
+                    if (a != null) vm.quitarAdjunto() else eligiendo = !eligiendo
+                }
                 .padding(horizontal = 22.dp, vertical = 14.dp)
         ) {
-            Text(if (a != null) "QUITAR" else "ADJUNTAR", style = textoBoton(14),
-                color = if (a != null) LadrilloText else Apagado)
+            Text(
+                when {
+                    a != null -> "QUITAR"
+                    eligiendo -> "CERRAR"
+                    else -> "ADJUNTAR"
+                },
+                style = textoBoton(14), color = if (a != null) LadrilloText else Apagado
+            )
+        }
+    }
+    if (a == null && eligiendo && !vm.subiendo) {
+        Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            BotonSecundario("Elegir de la galería", { eligiendo = false; onGaleria() }, habilitado = habilitado)
+            BotonSecundario("Tomar fotografía", { eligiendo = false; onCamara() }, habilitado = habilitado)
+            BotonSecundario("Adjuntar PDF", { eligiendo = false; onPdf() }, habilitado = habilitado)
         }
     }
     if (a != null && a.esImagen) {
