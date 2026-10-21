@@ -8,7 +8,7 @@ Reporte de lo que el frontend Android espera de la API. Generado a partir de la 
 - **[Encontrado]**: el requisito aparece en el código (pantalla, mock, DTO o configuración).
 - **[DTO]**: aparece solo en los DTOs de `…/news/data/red/Dtos.kt` y `Envolturas.kt`. Esos DTOs describen un contrato previsto, pero **ninguna pantalla los usa todavía**.
 - **[Propuesta]**: recomendación de este reporte. No existe en el código y debe confirmarse.
-- La URL base configurada es `http://apirg-2026-env.eba-p3qgmcku.us-east-1.elasticbeanstalk.com/api/v1/` para debug y `https://DOMINIO_REAL_API/api/v1/` para release, que sigue pendiente (`app/build.gradle.kts:22-35`). Todas las rutas de este documento son relativas a `/api/v1`.
+- La URL base se configura fuera del repositorio (`rg.api.url` en `local.properties`) y no se documenta aquí. Todas las rutas de este documento son relativas a `/api/v1`.
 - Los DTOs **no definen rutas HTTP**: no existe una interfaz Retrofit. Todas las rutas son **[Propuesta]**, aunque sus cuerpos vengan de un DTO.
 
 ---

@@ -210,8 +210,8 @@ class ClienteApiTest {
 
     @Test
     fun `contentUrl se resuelve contra el origen sin duplicar api v1`() {
-        val c = ClienteApi("https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/", gestor)
-        assertEquals("https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/media/3/content",
+        val c = ClienteApi("https://api.ejemplo.test/api/v1/", gestor)
+        assertEquals("https://api.ejemplo.test/api/v1/media/3/content",
             c.urlAdjunto("/api/v1/media/3/content"))
     }
 

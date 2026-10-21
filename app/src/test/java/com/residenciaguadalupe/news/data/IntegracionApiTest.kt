@@ -1,5 +1,6 @@
 package com.residenciaguadalupe.news.data
 
+import com.residenciaguadalupe.news.BuildConfig
 import com.residenciaguadalupe.news.data.red.*
 import com.residenciaguadalupe.news.media.data.RepositorioMediosApi
 import com.residenciaguadalupe.news.core.session.Sesion
@@ -24,7 +25,7 @@ import java.util.UUID
  */
 class IntegracionApiTest {
 
-    private val url = System.getenv("RG_API_URL") ?: "https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/"
+    private val url = System.getenv("RG_API_URL") ?: BuildConfig.URL_API
     private val bitacora = StringBuilder()
     private val fallas = mutableListOf<String>()
 

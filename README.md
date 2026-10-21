@@ -5,12 +5,11 @@ Residencia Guadalupe A.C. (Cuernavaca). Los residentes leen avisos, menús y
 eventos, reciben notificaciones y reaccionan; el personal publica y administra
 avisos; la administración además aprueba residentes y gestiona cuentas.
 
-La app está **conectada a la API desplegada en AWS** (API Gateway → Elastic
-Beanstalk Node.js 22 → RDS MySQL). Ya no usa datos de ejemplo.
+La app está **conectada a la API REST del proyecto** (entorno de pruebas). Ya
+no usa datos de ejemplo.
 
-> Entorno de **pruebas** con datos ficticios. El tramo Gateway → Beanstalk usa
-> HTTP provisional: no es una certificación de producción ni autoriza cargar
-> datos personales reales de residentes.
+> Entorno de **pruebas** con datos ficticios: no es una certificación de
+> producción ni autoriza cargar datos personales reales de residentes.
 
 ---
 
@@ -26,7 +25,7 @@ Beanstalk Node.js 22 → RDS MySQL). Ya no usa datos de ejemplo.
 8. [Detalles de implementación Android](#8-detalles-de-implementación-android)
 9. [Documentación de la API](#9-documentación-de-la-api)
 10. [Pruebas](#10-pruebas)
-11. [Verificación realizada contra AWS](#11-verificación-realizada-contra-aws)
+11. [Verificación realizada contra el entorno de pruebas](#11-verificación-realizada-contra-el-entorno-de-pruebas)
 12. [Problemas conocidos y solución de problemas](#12-problemas-conocidos-y-solución-de-problemas)
 13. [Fuera de alcance y pendientes](#13-fuera-de-alcance-y-pendientes)
 14. [Documentos de referencia](#14-documentos-de-referencia)
@@ -90,8 +89,9 @@ Pasos:
 
 1. Android Studio → **Open** → elija **la carpeta raíz del proyecto**
    (`ResidenciaGuadalupe/`, donde están `settings.gradle.kts` y `gradlew`).
-2. Espere el *Gradle sync*. Solo descarga dependencias de Google y Maven Central.
-3. **Run** en un emulador o teléfono con API 24 o superior y acceso a internet.
+2. Agregue `rg.api.url` a `local.properties` (ver [sección 4](#4-configuración-url-de-la-api-y-variantes)).
+3. Espere el *Gradle sync*. Solo descarga dependencias de Google y Maven Central.
+4. **Run** en un emulador o teléfono con API 24 o superior y acceso a internet.
 
 Las tipografías (Playfair Display y Source Sans 3) se descargan de Google
 Fonts en tiempo de ejecución: el emulador necesita Google Play Services.
@@ -128,23 +128,27 @@ Notas del entorno (JDK 25 que trae Android Studio actualmente):
 
 ## 4. Configuración: URL de la API y variantes
 
-La URL se define una sola vez en `app/build.gradle.kts`:
+La URL **no se versiona**. `app/build.gradle.kts` la lee de `local.properties`
+(que ya está en `.gitignore`) y la entrega al código como `BuildConfig.URL_API`:
 
-```kotlin
-val URL_API_PRUEBAS = "https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/"
+```properties
+rg.api.url=https://<direccion-de-la-api>/api/v1/
 ```
 
-y llega al código como `BuildConfig.URL_API`.
+También se acepta la variable de entorno `RG_API_URL`. Si falta, o si no usa
+`https://` y barra final, Gradle se detiene con un mensaje. La dirección real
+se comparte con el equipo por un canal privado; no la copie en documentación
+pública, issues ni capturas.
 
 | Variante | URL | Tráfico HTTP en claro | Logs de red |
 |---|---|---|---|
-| `debug` | Gateway de pruebas (HTTPS) | Solo a `10.0.2.2` (API local desde el emulador) | `HttpLoggingInterceptor` nivel BASIC, cabecera `Authorization` oculta |
-| `release` | Gateway de pruebas (HTTPS) mientras no exista dominio de producción | Prohibido | Ninguno |
+| `debug` | API de pruebas (HTTPS) | Solo a `10.0.2.2` (API local desde el emulador) | `HttpLoggingInterceptor` nivel BASIC, cabecera `Authorization` oculta |
+| `release` | API de pruebas (HTTPS) mientras no exista dominio de producción | Prohibido | Ninguno |
 
 Reglas:
 
-- **Usar siempre la dirección del API Gateway**, nunca el host de Elastic
-  Beanstalk ni la base MySQL.
+- **Usar siempre la dirección pública de la API**, nunca un host interno del
+  servidor ni la base de datos.
 - La base de Retrofit lleva **barra final**, y las rutas son relativas sin `/`
   inicial y sin repetir `api/v1` (`auth/login`, `posts/{id}`).
 - Para una API local: `http://10.0.2.2:8080/api/v1/` (solo en debug; ver
@@ -237,7 +241,7 @@ RepositorioMedios (archivos del selector, subida y cache privada)
 ClienteApi: OkHttp (Bearer + cierre ante 401) → Retrofit + kotlinx.serialization → ApiServicio
         │                                      └── Coil reutiliza el mismo OkHttp
         ▼
-API Gateway (HTTPS) → Elastic Beanstalk → RDS MySQL
+API REST (HTTPS)
 ```
 
 - **Contenedor manual.** `AplicacionResidencia` crea de forma perezosa
@@ -468,11 +472,11 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
 - Cuerpo de la aplicación `{error:{code,message,requestId,details}}` → se usa
   `message` tal cual, más los mensajes por campo (`mensajeCompleto`,
   `mensajeDe(campo)`).
-- Cuerpo de AWS/infraestructura (p. ej. `{"message":"Request Timeout"}` o
+- Cuerpo de infraestructura (p. ej. `{"message":"Request Timeout"}` o
   HTML) → mensaje propio según el status; **nunca se muestra HTML ni texto
   técnico**.
-- `referencia` = `requestId` del cuerpo, o las cabeceras `X-Request-Id` /
-  `apigw-requestid`. Se muestra como «Referencia para soporte» en errores
+- `referencia` = `requestId` del cuerpo o la cabecera de correlación de la
+  respuesta. Se muestra como «Referencia para soporte» en errores
   5xx. Nunca incluye el token.
 - 429 → «Espere N segundos…» con `Retry-After`.
 - Sin red → `estado = 0` («No hay conexión con la residencia…»).
@@ -503,7 +507,7 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
   `isPinned`: Fijado, Publicado, Archivado o Borrador.
 - `Publicacion` (con `meta`, `cuando` y `estadoAdmin` calculados), `Adjunto`,
   `Reacciones`, `Actividad`, `Notificacion`, `MesArchivo`.
-- Los **IDs son `String`** siempre (BIGINT de MySQL).
+- Los **IDs son `String`** siempre (enteros grandes del servidor).
 
 ### 8.5 Fechas y zona horaria (`data/Fechas.kt`)
 
@@ -569,227 +573,19 @@ La API aplica los permisos aunque la interfaz mostrara un botón indebido.
 
 ## 9. Documentación de la API
 
-Fuente completa: `documentacionAPI/openapi.yaml` (OpenAPI 3.1; es JSON válido).
+La especificación completa (OpenAPI, colección de Postman y evidencias de
+pruebas) se entrega al equipo por separado en `documentacionAPI/`, carpeta
+excluida del repositorio. No publique aquí la URL del entorno, el catálogo de
+rutas, credenciales ni detalles de la infraestructura del servidor.
 
-### 9.1 Datos generales
+Lo que la app asume del contrato:
 
-| | |
-|---|---|
-| Base URL (pruebas) | `https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1` |
-| Base URL (local) | `http://localhost:8080/api/v1` (desde el emulador: `10.0.2.2:8080`) |
-| Stack | Node.js 22 + MySQL · ZIP en Elastic Beanstalk detrás de API Gateway HTTP API · RDS MySQL |
-| Autenticación | `Authorization: Bearer <accessToken>` en todas las rutas protegidas, **incluidas imágenes y PDF** |
-| Token | JWT revocable, 8 h por defecto, sin refresh. Cada login crea una sesión independiente |
-| Zona de negocio | America/Mexico_City |
-| Correlación | Cabecera `X-Request-Id` (y `apigw-requestid` de Gateway) |
-| Rutas públicas | `auth/register`, `auth/login`, `health`, `ready` |
-
-### 9.2 Convenciones de serialización
-
-```json
-{ "data": { "id": "123" } }                                        // objeto
-{ "data": [], "meta": { "page": 1, "limit": 20, "total": 0 } }     // lista
-{ "data": [], "meta": { "page": 1, "limit": 20, "total": 0, "unreadCount": 0 } }  // notificaciones
-```
-
-- No existen `data.post`, `data.user` ni `items/pagination`. La excepción es
-  el login, que agrupa `user` y los datos de sesión.
-- IDs: **String** decimal. Paginación, conteos, `version` y `sizeBytes`:
-  números.
-- `*At`: ISO 8601 UTC con `Z`. `menuDate` y `admissionDate`: `YYYY-MM-DD`.
-- Paginación: `page` ≥ 1 (defecto 1); `limit` entre 1 y 100 (defecto 20).
-
-Error de aplicación:
-
-```json
-{ "error": { "code": "VALIDATION_FAILED", "message": "Revise los datos marcados.",
-             "requestId": "…", "details": [ { "field": "title", "message": "…" } ] } }
-```
-
-`details` puede ser `null`. AWS puede responder con otro cuerpo (p. ej.
-`{"message":"Request Timeout"}`); el cliente debe tolerarlo.
-
-Códigos vistos en las pruebas contra AWS: `UNAUTHENTICATED` (401),
-`ACCOUNT_PENDING` (403), `FORBIDDEN` (403), `VERSION_CONFLICT` (409),
-`IDEMPOTENCY_CONFLICT` (409), `UNSUPPORTED_MEDIA_TYPE` (415) y
-`VALIDATION_FAILED` (422). Los demás estados (credencial incorrecta 401, 404,
-413, 429 con `Retry-After`) se manejan por status; la app no depende del texto
-exacto de `code` salvo `ACCOUNT_PENDING` y `VERSION_CONFLICT`.
-
-### 9.3 Endpoints
-
-Todas las rutas son relativas a `/api/v1`. «Rol» indica quién puede usarla.
-
-**Salud**
-
-| Método | Ruta | Rol | Respuesta |
-|---|---|---|---|
-| GET | `/health` | Público | `{data:{status:"ok"}}` |
-| GET | `/ready` | Público | `{data:{status:"ready"}}` (conectividad MySQL y esquema) |
-
-**Sesión y perfil propio**
-
-| Método | Ruta | Cuerpo | Respuesta |
-|---|---|---|---|
-| POST | `/auth/register` | `{fullName, email, authMethod, secret}` | **201** `{data:User}` con `resident/pending`, **sin token** |
-| POST | `/auth/login` | `{email, authMethod:"password"\|"pin", secret, clientType:"android"}` | `{data:{user, expiresAt, tokenType:"Bearer", accessToken}}` |
-| GET | `/auth/me` | — | `{data:User}` (con preferencias y perfiles) |
-| PATCH | `/auth/me` | `{fullName}` | `{data:User}` |
-| POST | `/auth/logout` | — | **204** sin cuerpo; revoca la sesión actual |
-| PUT | `/auth/me/credentials` | `{currentSecret, authMethod, secret}` | **204**; revoca las **otras** sesiones. `currentSecret` incorrecto → 422 |
-| GET | `/auth/me/preferences` | — | `{data:Preferences}` |
-| PUT | `/auth/me/preferences` | `{notifyNotices, notifyActivities, notifyPhotos}` | `{data:Preferences}` |
-
-Reglas: `fullName` 2–150; contraseña 8–128 caracteres; PIN 4–6 dígitos. El
-registro nunca acepta `role`, `status` ni perfiles. El login con cuenta
-pendiente responde **403 `ACCOUNT_PENDING`**. Un secreto incorrecto no vacío
-da 401, aunque sea corto. Un token revocado o vencido da 401. El rol se valida
-contra MySQL en cada petición.
-
-**Publicaciones**
-
-| Método | Ruta | Rol | Notas |
-|---|---|---|---|
-| GET | `/posts` | Todos | Filtros abajo. Por defecto `status=published` |
-| POST | `/posts` | Admin, empleado | Crea y **publica** de inmediato; genera notificaciones. Cabecera opcional `Idempotency-Key` (8–128, `[a-zA-Z0-9_-]`). **201** |
-| GET | `/posts/{id}` | Según visibilidad | No marca lectura. Devuelve `ETag: "<version>"` |
-| PUT | `/posts/{id}` | Autor (empleado) o admin | **Sin `type`**. Cabecera opcional `If-Match: "<version>"` → 409 si cambió. Conserva estado y `publishedAt` |
-| DELETE | `/posts/{id}` | Admin | **204**. Permanente: borra adjuntos, lecturas, reacciones y notificaciones. Sin restore |
-| PATCH | `/posts/{id}/status` | Autor o admin | `{status:"published"\|"archived"}`. Archivar desfija; republicar no renotifica. Idempotente |
-| PATCH | `/posts/{id}/pin` | Admin | `{isPinned:boolean}`. Idempotente |
-| PUT | `/posts/{id}/read` | Residente | `{data:{read, readAt}}`. Conserva el primer `readAt` y marca también la notificación |
-| PUT | `/posts/{id}/reaction` | Residente | `{type:"like"\|"love"\|"happy"}` → `{data:{counts:{like,love,happy}, total, myReaction}}` |
-| DELETE | `/posts/{id}/reaction` | Residente | **200** (no 204) con el mismo resumen |
-
-Parámetros de `GET /posts`:
-
-| Parámetro | Valores | Uso en la app |
-|---|---|---|
-| `page`, `limit` | 1…, 1–100 | Paginación |
-| `status` | `published` (defecto), `draft`, `archived`, `all` | Admin: `all`. El empleado con `all/draft/archived` solo ve lo suyo. El residente recibe 403 |
-| `type` | `notice`, `menu`, `event` | Agenda: `event` |
-| `category` | Aviso, Actividad, Evento, Noticia (acepta mayúsculas; Salud/Capilla/Comida → Aviso) | Filtros del muro |
-| `hasImage` | boolean | Filtro «Fotografías» |
-| `pinned` | boolean | — |
-| `eventFrom` (inclusivo), `eventTo` (exclusivo) | date-time con Z u offset | Agenda |
-| `publishedBefore` | date-time | Archivo |
-| `sort` | `-pinned,-publishedAt` (defecto), `-publishedAt`, `eventStartAt` | Agenda: `eventStartAt`; archivo y admin: `-publishedAt` |
-
-Cuerpo de POST (PUT es igual **sin `type`**):
-
-| Campo | Tipo | Aviso | Menú | Evento |
-|---|---|:-:|:-:|:-:|
-| `type` | `notice`/`menu`/`event` | ✓ | ✓ | ✓ |
-| `category` | Aviso/Actividad/Evento/Noticia | ✓ | ✓ | ✓ |
-| `title` | 1–150 | ✓ | ✓ | ✓ |
-| `body` | 1–5000 | ✓ | ✓ | ✓ |
-| `isPinned` | boolean (solo admin puede cambiarlo) | opc. | opc. | opc. |
-| `attachmentIds` | `[id]`, máximo 1 | opc. | opc. | opc. |
-| `expiresAt` | date-time o null | opc. | opc. | opc. |
-| `menuDate` | `YYYY-MM-DD` | — | ✓ | — |
-| `mealType` | `breakfast`/`lunch`/`dinner`/`daily` | — | ✓ | — |
-| `eventStartAt`, `eventEndAt` | date-time (fin ≥ inicio) | — | — | ✓ |
-| `eventLocation` | 1–120 | — | — | ✓ |
-
-Se rechazan los campos ajenos al tipo (422). Repetir la misma
-`Idempotency-Key` con el mismo cuerpo y usuario devuelve la respuesta original
-durante 24 h; con otro cuerpo → **409 `IDEMPOTENCY_CONFLICT`**.
-
-`Post` (respuesta): `id, type, category, title, body, status, isPinned,
-isRead, author{id, fullName, area}, menuDate, mealType, eventStartAt,
-eventEndAt, eventLocation, publishedAt, expiresAt, version, attachments[Media],
-reactions{counts, total, myReaction}, createdAt, updatedAt`.
-
-**Archivos**
-
-| Método | Ruta | Rol | Notas |
-|---|---|---|---|
-| POST | `/media` | Admin, empleado | multipart: `file` (obligatorio) y `altText` (≤250). **201** `{data:Media}` con `postId: null`. No enviar base64 en JSON |
-| GET | `/media/{id}/content` | Con permiso | Binario con `Content-Type` real y `Cache-Control: private, no-store`. `variant=original` o sin query; **no hay miniaturas** |
-| DELETE | `/media/{id}` | Dueño (sin asociar) o admin | **204** |
-
-`Media`: `id, postId, originalName, mimeType, sizeBytes, altText, sortOrder,
-contentUrl, createdAt`. `contentUrl` es **relativa al origen**
-(`/api/v1/media/45/content`). Límites: JPEG/PNG ≤ 5,000,000 bytes; PDF ≤
-9,000,000 bytes (no 10 MB, por el límite total de API Gateway). El servidor
-comprueba la firma del archivo (formato falso → 415); no pasa antivirus ni
-redimensiona. Los huérfanos de más de 24 h se limpian cada hora.
-
-**Notificaciones (solo residente; personal y admin reciben 403)**
-
-| Método | Ruta | Respuesta |
-|---|---|---|
-| GET | `/notifications?page&limit&read` | `{data:[Notification], meta:{page, limit, total, unreadCount}}`, más recientes primero |
-| GET | `/notifications/unread-count` | `{data:{unreadCount}}` |
-| PUT | `/notifications/{id}/read` | `{data:Notification}` (no marca el post) |
-| POST | `/notifications/read-all` | `{data:{updated, unreadCount}}` |
-| POST | `/notifications/archive-read` | `{data:{archived}}` (solo leídas; se conservan en la BD) |
-
-`Notification`: `id, type ("new_post"|"reminder"), title, body, createdAt,
-isRead, readAt, postId`. Se generan **al publicar**, en la misma transacción,
-para residentes activos según sus preferencias. No se generan al editar ni al
-republicar, ni de forma retroactiva al aprobar una cuenta. Clasificación
-provisional, sin duplicados:
-- Evento con imagen → `notifyPhotos`.
-- Evento sin imagen, o categoría Actividad → `notifyActivities`.
-- Todo lo demás → `notifyNotices`.
-
-Valores por defecto: avisos sí, actividades sí, fotos no. `reminder` está
-reservado: hoy no hay recordatorios automáticos.
-
-**Usuarios (admin)**
-
-| Método | Ruta | Cuerpo / parámetros | Notas |
-|---|---|---|---|
-| GET | `/users` | `page, limit, role, status, q` | Lista paginada |
-| GET | `/users/{id}` | — | `{data:User}` |
-| POST | `/users` | `{fullName, email, role, authMethod, secret, residentProfile?, staffProfile?}` | Cuenta **active**, con `approvedBy/approvedAt`. **201** |
-| PUT | `/users/{id}` | `{fullName, role, status, residentProfile?, staffProfile?}` | Editar, aprobar o deshabilitar. Sin email ni contraseña. Omitir `residentProfile` lo **conserva**; `null` explícito se rechaza |
-| DELETE | `/users/{id}` | — | Alias de deshabilitar (**204**) |
-| PUT | `/users/{id}/credentials` | `{authMethod, secret}` | Reposición manual en recepción; **204**; revoca **todas** las sesiones del usuario |
-
-- `residentProfile` de escritura: `department` y `admissionDate` son
-  obligatorios. Opcionales: `phone` (10 dígitos), `roomLocation` (≤150) y
-  `familyContact{fullName, relationship, phone}`.
-- La respuesta añade `roomNumber` (alias de `department`).
-- Un perfil incompleto se devuelve como `null`.
-- `staffProfile`: `{area}`; la respuesta añade `createdAt` y `lastAccessAt`.
-- No se permite auto-deshabilitarse, degradarse, ni quitar al último admin
-  activo.
-- Observado en pruebas: la API **sí acepta** activar a un residente sin perfil.
-  La app es más estricta y exige habitación y fecha de ingreso para confirmar.
-
-`User`: `id, fullName, email, role, status, authMethod, emailVerifiedAt,
-approvedBy, approvedAt, createdAt, updatedAt, residentProfile, staffProfile,
-preferences`.
-
-**Auditoría (admin)**
-
-| Método | Ruta | Parámetros | Respuesta |
-|---|---|---|---|
-| GET | `/audit-logs` | `page, limit, actorId, entityType (user/post/media/session/preferences/notification), entityId` | `{data:[{id, actorId, action, entityType, entityId, requestId, createdAt}], meta}` |
-
-Está definida en `ApiServicio.auditoria()`, pero la app **no tiene pantalla**
-de auditoría.
-
-**Alias de compatibilidad** (no los usa la app; no se probaron):
-`GET/PUT /posts/{id}/read/me`, `GET /posts/{id}/reactions`,
-`PUT/DELETE /posts/{id}/reactions/me`.
-
-### 9.4 Matriz de permisos
-
-| Acción | Residente | Empleado | Admin |
-|---|:-:|:-:|:-:|
-| Ver muro (publicadas, no vencidas) | ✓ | ✓ | ✓ |
-| Ver `status=all/draft/archived` | 403 | Solo propias | Todas |
-| Crear publicación | 403 | ✓ | ✓ |
-| Editar / archivar / republicar | 403 | Solo propias | ✓ |
-| Fijar / desfijar | 403 | 403 | ✓ |
-| Eliminar permanentemente | 403 | 403 | ✓ |
-| Subir adjuntos | 403 | ✓ | ✓ |
-| Leer / reaccionar / buzón | ✓ | 403 | 403 |
-| Preferencias de notificación | ✓ | (sin buzón) | (sin buzón) |
-| Usuarios y auditoría | 403 | 403 | ✓ |
+- Autenticación con `Authorization: Bearer <token>` en las rutas protegidas,
+  incluidas imágenes y PDF.
+- Respuestas `{data}`, `{data, meta}` en listas paginadas y
+  `{error:{code, message, requestId, details}}` en errores.
+- IDs como `String`; instantes `*At` en ISO 8601 UTC; fechas civiles
+  `YYYY-MM-DD`; zona de negocio America/Mexico_City.
 
 ---
 
@@ -861,7 +657,7 @@ si se habilita sin credenciales:
 ```bash
 RG_API_CORREO='<correo admin de pruebas>' RG_API_SECRETO='<contraseña>' \
   ./gradlew :app:testDebugUnitTest -PintegracionApi=true --tests '*IntegracionApiTest' --rerun-tasks
-# Opcional: RG_API_URL para otra base (por defecto el Gateway de pruebas)
+# Opcional: RG_API_URL para otra base (por defecto rg.api.url de local.properties)
 ```
 
 - El resultado paso a paso queda en `app/build/integracion-api.txt`.
@@ -881,7 +677,7 @@ revocado.
 
 ---
 
-## 11. Verificación realizada contra AWS
+## 11. Verificación realizada contra el entorno de pruebas
 
 **23/09/2026, cuenta de administrador de pruebas.**
 
@@ -903,9 +699,6 @@ revocado.
     el valor actual (§8.6).
   - **Reintento automático del 408** en subidas grandes: se evita con un cuerpo
     de un solo envío (§8.7).
-- Pendiente del backend, según su reporte: el rechazo **413** de archivos
-  mayores al límite no está certificado (en AWS se obtuvo 408 por
-  transferencia incompleta).
 
 ---
 
@@ -914,7 +707,7 @@ revocado.
 | Síntoma | Causa / solución |
 |---|---|
 | `socket failed: EPERM` al entrar, tras `adb install -r` | Estado de permisos heredado de una instalación anterior. `adb uninstall com.residenciaguadalupe.news` e instalar de nuevo |
-| «No hay conexión con la residencia» | Sin internet, o el entorno de pruebas está apagado (puede apagarse fuera de las pruebas). Probar `curl …/api/v1/health` |
+| «No hay conexión con la residencia» | Sin internet, o el entorno de pruebas está apagado (puede apagarse fuera de las pruebas). Consultar con el equipo de backend |
 | Horas corridas una hora | Solo ocurriría si se quitara la protección de `Fechas.zonaResidencia` en un teléfono con tzdata < 2022b |
 | `lintVitalAnalyzeRelease` falla con `25.0.3` | JDK 25 + AGP 8.5. Usar JDK 17/21 u omitir lint (ver §3) |
 | `Daemon compilation failed` | Mismo origen; Gradle compila igual. `-Pkotlin.compiler.execution.strategy=in-process` |
@@ -925,7 +718,7 @@ revocado.
 Para reportar un problema al backend envíe: método y ruta, rol, JSON sin
 secretos, status y respuesta, resultado esperado, hora y **requestId**
 (`X-Request-Id` / «Referencia para soporte»). Nunca envíe contraseñas, tokens
-ni credenciales de RDS.
+ni credenciales de la base de datos.
 
 ---
 
@@ -943,7 +736,7 @@ Pendientes del lado de la app:
 - «Escuchar aviso» (lectura en voz alta) solo cambia de estado; falta conectar
   `TextToSpeech`.
 - No hay pantalla de auditoría (el endpoint está en `ApiServicio`).
-- Dominio HTTPS de producción: hoy release usa el Gateway de pruebas.
+- Dominio HTTPS de producción: hoy release usa el entorno de pruebas.
 - Firma del APK de release.
 
 ---
@@ -952,9 +745,9 @@ Pendientes del lado de la app:
 
 | Archivo | Contenido |
 |---|---|
-| `documentacionAPI/REPORTE-FINAL-FRONTEND.md` | Estado del despliegue AWS, base URL, resultados y pendientes del backend |
+| `documentacionAPI/REPORTE-FINAL-FRONTEND.md` | Estado del despliegue, resultados y pendientes del backend |
 | `documentacionAPI/ENTREGA-FRONTEND.md` | Contrato de integración: convenciones, decisiones, permisos y reglas de negocio |
 | `documentacionAPI/openapi.yaml` | OpenAPI 3.1 con campos, tipos, nulabilidad, requests, responses y filtros |
 | `documentacionAPI/POSTMAN.md` + `Residencias-Guadalupe.postman_collection.json` | Colección Postman (35 solicitudes) y recorrido manual recomendado |
-| `documentacionAPI/evidencia-pruebas-aws-2026-09-23.json` | Evidencia de pruebas del backend con muestras reales (IDs ya no válidos) |
+| `documentacionAPI/evidencia-pruebas-aws-2026-09-23.json` | Evidencia de pruebas del backend |
 | `BACKEND_REQUIREMENTS.md` | Requisitos que el frontend pidió al backend antes de la integración (histórico: algunos bloqueadores ya están resueltos) |

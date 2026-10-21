@@ -1,11 +1,29 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-/** Base de Retrofit: con barra final y sin repetir api/v1 en las rutas. */
-val URL_API_PRUEBAS = "https://jmuq4nqote.execute-api.us-east-1.amazonaws.com/api/v1/"
+/**
+ * Base de Retrofit: con barra final y sin repetir api/v1 en las rutas.
+ * No se versiona: se lee de rg.api.url en local.properties o de RG_API_URL.
+ */
+val URL_API_PRUEBAS: String = run {
+    val local = Properties()
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { local.load(it) }
+    val url = local.getProperty("rg.api.url")?.trim()?.takeIf { it.isNotEmpty() }
+        ?: System.getenv("RG_API_URL")?.trim()?.takeIf { it.isNotEmpty() }
+        ?: throw GradleException(
+            "Falta la URL de la API. Agregue rg.api.url=https://.../api/v1/ a local.properties " +
+                "(o defina RG_API_URL). Pida la direccion al equipo por un canal privado."
+        )
+    check(url.startsWith("https://") && url.endsWith("/")) {
+        "rg.api.url debe usar https:// y terminar en barra: $url"
+    }
+    url
+}
 
 android {
     namespace = "com.residenciaguadalupe.news"
